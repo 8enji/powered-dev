@@ -1,0 +1,17 @@
+name: Board gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  verify-plan-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check plan status for branch
+        run: python3 scripts/board.py check-pr "${{ github.head_ref }}"

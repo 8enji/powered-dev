@@ -1,0 +1,18 @@
+# CLAUDE.md
+
+## Workstream tracking
+- `docs/board/backlog.md` — manual entries; titles must be unique.
+- `docs/board/in-flight.md` — auto-generated from active plans (do not edit).
+- Pick up work with `/task-start`; finish with `/task-finish`.
+
+## What this is
+__PROJECT_DESCRIPTION__
+
+## Workflow rules
+- The superpowers skill system handles workflow ordering (brainstorming, specs, plans, TDD, verification).
+- Before claiming done → run `__GATE_CMD__`.
+- New file in `docs/superpowers/{specs,plans,reports,handoffs}/` → add
+  YAML frontmatter; schema enforced by `scripts/docs_index.py`.
+
+## Where to find prior work
+`docs/superpowers/INDEX.md` (auto-generated).
