@@ -94,3 +94,24 @@ def test_lint_lite_tier_forbids_spec(tmp_path):
     p.write_text("---\nstatus: active\ntype: plan\ndate: 2026-01-01\nsummary: X\nbranch: b\ntier: lite\nrelated:\n  spec: foo.md\n---\n")
     errors, _ = lint([p])
     assert any("forbids `related.spec`" in e for e in errors)
+
+
+def test_lint_plan_missing_branch(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text("---\nstatus: active\ntype: plan\ndate: 2026-01-01\nsummary: X\ntier: lite\n---\n")
+    errors, _ = lint([p])
+    assert any("plan missing required field `branch`" in e for e in errors)
+
+
+def test_lint_plan_missing_tier(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text("---\nstatus: active\ntype: plan\ndate: 2026-01-01\nsummary: X\nbranch: feature/x\n---\n")
+    errors, _ = lint([p])
+    assert any("plan missing required field `tier`" in e for e in errors)
+
+
+def test_lint_plan_with_branch_and_tier_passes(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text("---\nstatus: active\ntype: plan\ndate: 2026-01-01\nsummary: X\nbranch: feature/x\ntier: lite\n---\n")
+    errors, _ = lint([p])
+    assert not any("plan missing" in e for e in errors)

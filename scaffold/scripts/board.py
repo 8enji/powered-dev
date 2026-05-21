@@ -449,6 +449,14 @@ def _cmd_start(title: str, tier: str) -> None:
         sys.exit(1)
 
     branch = _current_branch()
+
+    existing = _find_active_plan_for_branch(branch)
+    if existing is not None:
+        plan_path, fm = existing
+        print(f"ERROR: Branch '{branch}' already has an active plan: '{fm.get('summary', plan_path.stem)}'.")
+        print("Finish or abandon the current task before starting a new one.")
+        sys.exit(1)
+
     date = _today()
     slug = _slugify(title)
     touched: list[Path] = []

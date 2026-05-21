@@ -1,7 +1,9 @@
 """Tests for board.py."""
 
 from pathlib import Path
+from unittest import mock
 
+import board
 from board import (
     build_in_flight,
     check_branch_active,
@@ -79,3 +81,24 @@ def test_check_branch_no_match(tmp_path):
     plans.mkdir(parents=True)
     rc, _ = check_branch_active("feature/nonexistent", plans_root=plans)
     assert rc == 0
+
+
+def test_start_rejects_duplicate_active_plan(tmp_path):
+    """_cmd_start should exit(1) if the branch already has an active plan."""
+    plans = tmp_path / "plans"
+    _make_plan(plans, "Existing", "active", "feature/dup")
+
+    backlog = tmp_path / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## New Task\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "BOARD_ROOT", tmp_path / "board"),
+        mock.patch.object(board, "_current_branch", return_value="feature/dup"),
+    ):
+        import pytest
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_start("New Task", "lite")
+        assert exc_info.value.code == 1

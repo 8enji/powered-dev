@@ -28,9 +28,8 @@ elif [[ "$FIRST_LINE" =~ $git_merge ]]; then
     if [[ "$CURRENT" != "main" && "$CURRENT" != "master" ]]; then
         exit 0
     fi
-    REST=$(sed -E 's/^git( +-[cC] +[^ ]+)* +merge( +-[^ ]+)*//' <<<"$FIRST_LINE")
-    REST=$(awk '{$1=$1; print}' <<<"$REST")
-    TARGET=$(awk '{print $1}' <<<"$REST")
+    MERGE_ARGS=$(sed -E 's/^git( +-[cC] +[^ ]+)* +merge//' <<<"$FIRST_LINE")
+    TARGET=$(echo "$MERGE_ARGS" | xargs -n1 | git rev-parse --revs-only --no-flags --stdin 2>/dev/null | head -1)
     if [ -z "$TARGET" ]; then
         exit 0
     fi

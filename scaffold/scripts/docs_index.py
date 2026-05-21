@@ -196,6 +196,13 @@ def lint(paths: list[Path]) -> tuple[list[str], list[str]]:
         if doc_type and doc_type not in VALID_TYPE:
             errors.append(f"{name}: invalid type `{doc_type}` (must be one of {sorted(VALID_TYPE)})")
 
+        # Plans require branch and tier
+        if doc_type == "plan":
+            if "branch" not in fm or fm["branch"] == "":
+                errors.append(f"{name}: plan missing required field `branch`")
+            if "tier" not in fm or fm["tier"] == "":
+                errors.append(f"{name}: plan missing required field `tier`")
+
         # Validate tier if present
         tier = fm.get("tier", "")
         if tier:

@@ -197,7 +197,7 @@ Arguments (may be empty): `$ARGUMENTS`
      ```
    - `API_EXIT != 0` and stderr contains `Unprocessable Entity` or `comments` validation error → retry once with `comments: []` (body-only review):
      ```bash
-     jq '.comments = []' "/tmp/codex-review-$PR.review-payload.json" \
+     jq '.comments = [] | .event = "COMMENT"' "/tmp/codex-review-$PR.review-payload.json" \
        > "/tmp/codex-review-$PR.review-payload.body-only.json"
      gh api -X POST "/repos/$OWNER/$REPO/pulls/$PR/reviews" \
             --input "/tmp/codex-review-$PR.review-payload.body-only.json" \
