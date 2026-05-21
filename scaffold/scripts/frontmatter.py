@@ -13,7 +13,7 @@ from typing import Any
 
 def parse_frontmatter(path: Path) -> dict[str, Any] | None:
     """Parse YAML frontmatter from a markdown file. Returns None if absent/malformed."""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
     if not text.startswith("---\n"):
         return None
     end = text.find("\n---", 4)

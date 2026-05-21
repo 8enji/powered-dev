@@ -28,10 +28,14 @@ elif [[ "$FIRST_LINE" =~ $git_merge ]]; then
     if [[ "$CURRENT" != "main" && "$CURRENT" != "master" ]]; then
         exit 0
     fi
-    MERGE_ARGS=$(sed -E 's/^git( +-[cC] +[^ ]+)* +merge//' <<<"$FIRST_LINE")
-    TARGET=$(echo "$MERGE_ARGS" | xargs -n1 | git rev-parse --revs-only --no-flags --stdin 2>/dev/null | head -1)
+    # Branch name is always the last argument in a merge command
+    TARGET=$(awk '{print $NF}' <<<"$FIRST_LINE")
     # Normalize remote refs (origin/feature/x → feature/x) to match plan branch names
     TARGET="${TARGET#origin/}"
+    # Don't treat bare "merge" (no branch arg) as a target
+    if [[ "$TARGET" == "merge" || "$TARGET" =~ ^- ]]; then
+        exit 0
+    fi
     if [ -z "$TARGET" ]; then
         exit 0
     fi

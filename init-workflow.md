@@ -112,7 +112,7 @@ Save the rendered result. Then:
 ### 4b. Render settings.json hooks
 
 Read `.claude/settings.json` from the staging directory. Replace:
-- `__GATE_CMD__` → `$GATE_CMD`
+- `__GATE_CMD__` → `$GATE_CMD`, but first JSON-escape the value (backslashes and double quotes must be escaped so the resulting `.claude/settings.json` remains valid JSON). Use: `ESCAPED_GATE=$(printf '%s' "$GATE_CMD" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')` and substitute `$ESCAPED_GATE` in place of `__GATE_CMD__`.
 
 Then merge into the project's `.claude/settings.json`:
 - If `.claude/settings.json` does not exist → write the rendered file directly.
