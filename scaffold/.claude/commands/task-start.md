@@ -9,7 +9,7 @@ Pick a backlog item and start work on it.
    - **full** — feature work, design discussion needed, user-visible behavior change.
    - **lite** — typo fixes, small renames, chore cleanups, doc-only changes.
 3. Verify the current branch is not `main`/`master`. If it is, ask the user to create a branch first (do not proceed).
-4. Run: `python3 scripts/board.py start --title "<exact title>" --tier <full|lite>`
+4. Run: `python3 scripts/board.py start "<exact title>" --tier <full|lite>`
 5. Review the staged diff (`git diff --staged`) and commit if it looks right. Commit message format: `chore(board): start task — <title>`.
 6. Next skill:
    - **full** → invoke `superpowers:brainstorming` to fill the spec stub at `docs/superpowers/specs/<date>-<slug>-design.md`.

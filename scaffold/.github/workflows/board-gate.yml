@@ -14,4 +14,4 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Check plan status for branch
-        run: python3 scripts/board.py check-pr --branch "${{ github.head_ref }}"
+        run: python3 scripts/board.py check-pr "${{ github.head_ref }}"

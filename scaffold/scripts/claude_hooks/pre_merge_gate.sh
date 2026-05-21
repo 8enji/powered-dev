@@ -42,7 +42,7 @@ if [ -z "$TARGET" ]; then
     exit 0
 fi
 
-if ! python3 "$REPO_ROOT/scripts/board.py" check-merge --branch "$TARGET" 1>&2; then
+if ! python3 "$REPO_ROOT/scripts/board.py" check-merge "$TARGET" 1>&2; then
     exit 2
 fi
 exit 0
