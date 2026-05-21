@@ -140,7 +140,7 @@ def _fmt_inflight_entry(path: Path, fm: dict[str, Any]) -> str:
     summary = fm.get("summary", path.stem)
     tier = fm.get("tier", "")
     branch = fm.get("branch", "")
-    plan_link = f"[plan](plans/{path.name})"
+    plan_link = f"[plan](../superpowers/plans/{path.name})"
 
     parts = [f"**{summary}**"]
     if tier:
@@ -153,7 +153,7 @@ def _fmt_inflight_entry(path: Path, fm: dict[str, Any]) -> str:
     related = fm.get("related")
     if isinstance(related, dict) and "spec" in related:
         spec_name = related["spec"]
-        parts.append(f"[spec](specs/{spec_name})")
+        parts.append(f"[spec](../superpowers/specs/{spec_name})")
 
     return "- " + " — ".join(parts)
 
