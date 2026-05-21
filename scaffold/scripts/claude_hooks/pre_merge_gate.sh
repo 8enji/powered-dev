@@ -30,6 +30,8 @@ elif [[ "$FIRST_LINE" =~ $git_merge ]]; then
     fi
     MERGE_ARGS=$(sed -E 's/^git( +-[cC] +[^ ]+)* +merge//' <<<"$FIRST_LINE")
     TARGET=$(echo "$MERGE_ARGS" | xargs -n1 | git rev-parse --revs-only --no-flags --stdin 2>/dev/null | head -1)
+    # Normalize remote refs (origin/feature/x → feature/x) to match plan branch names
+    TARGET="${TARGET#origin/}"
     if [ -z "$TARGET" ]; then
         exit 0
     fi

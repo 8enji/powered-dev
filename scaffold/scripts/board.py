@@ -466,6 +466,9 @@ def _cmd_start(title: str, tier: str) -> None:
     if tier == "full":
         spec_filename = f"{date}-{slug}-design.md"
         spec_path = SPECS_ROOT / spec_filename
+        if spec_path.exists():
+            print(f"ERROR: Spec file already exists: {spec_path}")
+            sys.exit(1)
         SPECS_ROOT.mkdir(parents=True, exist_ok=True)
         spec_content = _SPEC_STUB.format(date=date, title=title)
         spec_path.write_text(spec_content, encoding="utf-8")
@@ -475,6 +478,9 @@ def _cmd_start(title: str, tier: str) -> None:
     # Scaffold plan stub
     plan_filename = f"{date}-{slug}.md"
     plan_path = PLANS_ROOT / plan_filename
+    if plan_path.exists():
+        print(f"ERROR: Plan file already exists: {plan_path}")
+        sys.exit(1)
     PLANS_ROOT.mkdir(parents=True, exist_ok=True)
 
     if tier == "full" and spec_filename:
