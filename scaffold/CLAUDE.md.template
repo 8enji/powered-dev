@@ -2,8 +2,8 @@
 
 ## Workstream tracking
 - `docs/board/backlog.md` — manual entries; titles must be unique.
-- `docs/board/in-flight.md` — auto-generated from active plans (do not edit).
-- Pick up work with `/task-start`; finish with `/task-finish`.
+- Active work is tracked by `status: active` plan frontmatter and `docs/superpowers/INDEX.md`.
+- Pick up work with `/task-start`; ship with `/task-ship`.
 
 ## What this is
 __PROJECT_DESCRIPTION__

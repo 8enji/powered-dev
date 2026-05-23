@@ -5,7 +5,6 @@ from unittest import mock
 
 import board
 from board import (
-    build_in_flight,
     check_branch_active,
     lint_backlog,
 )
@@ -28,22 +27,6 @@ def _make_backlog(board_dir: Path, entries: list[str]) -> Path:
     p = board_dir / "backlog.md"
     p.write_text(content)
     return p
-
-
-def test_build_in_flight_active(tmp_path):
-    plans = tmp_path / "docs" / "superpowers" / "plans"
-    _make_plan(plans, "Active Task", "active", "feature/active")
-    _make_plan(plans, "Done Task", "done", "feature/done")
-    result = build_in_flight(plans)
-    assert "Active Task" in result
-    assert "Done Task" not in result
-
-
-def test_build_in_flight_empty(tmp_path):
-    plans = tmp_path / "docs" / "superpowers" / "plans"
-    plans.mkdir(parents=True)
-    result = build_in_flight(plans)
-    assert "_(none)_" in result
 
 
 def test_lint_backlog_unique(tmp_path):
@@ -102,3 +85,60 @@ def test_start_rejects_duplicate_active_plan(tmp_path):
         with pytest.raises(SystemExit) as exc_info:
             board._cmd_start("New Task", "lite")
         assert exc_info.value.code == 1
+
+
+def test_start_stages_backlog_plan_and_index_without_in_flight(tmp_path):
+    docs = tmp_path / "docs" / "superpowers"
+    plans = docs / "plans"
+    specs = docs / "specs"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## New Task\n\nSome notes.\n")
+    in_flight = tmp_path / "docs" / "board" / "in-flight.md"
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "SPECS_ROOT", specs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "BOARD_ROOT", backlog.parent),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "IN_FLIGHT_PATH", in_flight, create=True),
+        mock.patch.object(board, "_current_branch", return_value="feature/new"),
+        mock.patch.object(board, "_today", return_value="2026-05-21"),
+        mock.patch.object(board, "_git_add") as git_add,
+    ):
+        board._cmd_start("New Task", "lite")
+
+    staged = git_add.call_args.args[0]
+    assert backlog in staged
+    assert plans / "2026-05-21-new-task.md" in staged
+    assert index in staged
+    assert in_flight not in staged
+    assert not in_flight.exists()
+
+
+def test_finish_stages_plan_and_index_without_in_flight(tmp_path):
+    docs = tmp_path / "docs" / "superpowers"
+    plans = docs / "plans"
+    index = docs / "INDEX.md"
+    plan = _make_plan(plans, "Active Task", "active", "feature/active")
+    in_flight = tmp_path / "docs" / "board" / "in-flight.md"
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "BOARD_ROOT", in_flight.parent),
+        mock.patch.object(board, "IN_FLIGHT_PATH", in_flight, create=True),
+        mock.patch.object(board, "_current_branch", return_value="feature/active"),
+        mock.patch.object(board, "_git_add") as git_add,
+    ):
+        board._cmd_finish()
+
+    staged = git_add.call_args.args[0]
+    assert plan in staged
+    assert index in staged
+    assert in_flight not in staged
+    assert not in_flight.exists()

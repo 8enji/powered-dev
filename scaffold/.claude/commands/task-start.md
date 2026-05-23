@@ -1,5 +1,5 @@
 ---
-description: Move a backlog item to in-flight (scaffold spec+plan stubs, or just plan for lite).
+description: Start a backlog item (scaffold spec+plan stubs, or just plan for lite).
 ---
 
 Pick a backlog item and start work on it.

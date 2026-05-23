@@ -14,10 +14,34 @@ def test_legacy_task_codex_review_command_is_not_installed():
     assert not (ROOT / ".claude/commands/task-codex-review.md").exists()
 
 
+def test_task_backlog_command_is_not_installed():
+    assert not (ROOT / ".claude/commands/task-backlog.md").exists()
+
+
+def test_in_flight_artifact_is_not_installed_or_documented():
+    assert not (ROOT / "docs/board/in-flight.md").exists()
+
+    checked_paths = [
+        "../README.md",
+        "../init-workflow.md",
+        "../docs/customization.md",
+        "../docs/how-it-works.md",
+        "CLAUDE.md.template",
+        ".claude/commands/task-start.md",
+        ".claude/commands/task-finish.md",
+        ".claude/commands/task-ship.md",
+        "scripts/board.py",
+        "scripts/githooks/pre-commit",
+    ]
+    for path in checked_paths:
+        assert "in-flight" not in _read(path)
+
+
 def test_ship_checks_finished_task_before_commit():
     ship = _read(".claude/commands/task-ship.md")
 
     assert 'python3 scripts/board.py check-merge "$BRANCH"' in ship
+    assert "python3 scripts/board.py finish" in ship
 
 
 def test_finish_hands_off_cleanly_to_ship():
@@ -27,11 +51,13 @@ def test_finish_hands_off_cleanly_to_ship():
     assert "continue to `/task-ship`" in finish
 
 
-def test_ship_has_codex_review_wake_marker():
+def test_ship_keeps_codex_review_as_separate_optional_command():
     ship = _read(".claude/commands/task-ship.md")
 
-    assert "/tmp/ship-codex-review-pr" in ship
-    assert "Codex-review mode" in ship
+    assert "/tmp/ship-codex-review-pr" not in ship
+    assert "Codex-review mode" not in ship
+    assert "Request Codex review" not in ship
+    assert "Optional follow-up" in ship
     assert "/request-codex-review $PR" in ship
 
 
@@ -103,6 +129,14 @@ def test_installer_uses_request_codex_review_name():
     assert "task-codex-review" not in readme
 
 
+def test_installer_does_not_copy_removed_command_or_in_flight_artifact():
+    init = _read("../init-workflow.md")
+
+    assert ".claude/commands/task-backlog.md" not in init
+    assert "docs/board/in-flight.md" not in init
+    assert "{backlog,in-flight}" not in init
+
+
 def test_codex_review_jq_requirement_is_documented():
     readme = _read("../README.md")
     customization = _read("../docs/customization.md")
@@ -115,8 +149,11 @@ def test_readme_documents_happy_path_and_failure_recovery():
     readme = _read("../README.md")
 
     assert "## Happy path" in readme
-    for command in ("/init-workflow", "/task-start", "/task-finish", "/task-ship"):
+    for command in ("/init-workflow", "/task-start", "/task-ship"):
         assert command in readme
+    happy_path = readme.split("## Happy path", 1)[1].split("## Failure recovery", 1)[0]
+    assert "/task-finish" not in happy_path
+    assert "/task-backlog" not in readme
 
     assert "## Failure recovery" in readme
     assert "Active plan blocks push or PR creation" in readme

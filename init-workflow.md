@@ -78,11 +78,9 @@ For each file below, check if it already exists in the target project. If it doe
 | `scripts/claude_hooks/pre_merge_gate.sh` | `scripts/claude_hooks/pre_merge_gate.sh` |
 | `.claude/commands/task-start.md` | `.claude/commands/task-start.md` |
 | `.claude/commands/task-finish.md` | `.claude/commands/task-finish.md` |
-| `.claude/commands/task-backlog.md` | `.claude/commands/task-backlog.md` |
 | `.claude/commands/task-ship.md` | `.claude/commands/task-ship.md` |
 | `.github/workflows/board-gate.yml` | `.github/workflows/board-gate.yml` |
 | `docs/board/backlog.md` | `docs/board/backlog.md` |
-| `docs/board/in-flight.md` | `docs/board/in-flight.md` |
 | `docs/superpowers/INDEX.md` | `docs/superpowers/INDEX.md` |
 | `docs/superpowers/specs/.gitkeep` | `docs/superpowers/specs/.gitkeep` |
 | `docs/superpowers/plans/.gitkeep` | `docs/superpowers/plans/.gitkeep` |
@@ -198,11 +196,11 @@ Installed:
   scripts/board.py, docs_index.py, frontmatter.py
   scripts/githooks/pre-commit
   scripts/claude_hooks/pre_merge_gate.sh
-  .claude/commands/task-{start,finish,backlog,ship}.md
+  .claude/commands/task-{start,finish,ship}.md
   [if codex] .claude/commands/request-codex-review.md + codex support files
   .claude/settings.json (hooks merged)
   .github/workflows/board-gate.yml
-  docs/board/{backlog,in-flight}.md
+  docs/board/backlog.md
   docs/superpowers/ directory tree
   CLAUDE.md [created|updated]
   Git pre-commit hook [installed|appended|skipped]
@@ -211,6 +209,7 @@ Next steps:
   1. Review the changes: git diff
   2. Add tasks to docs/board/backlog.md
   3. Run /task-start to begin your first task
+  4. Run /task-ship when the task is ready to finish and ship
 ```
 
 ## Edge cases
