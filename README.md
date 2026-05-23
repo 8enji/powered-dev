@@ -37,6 +37,12 @@ Then in Claude Code:
 Install the [superpowers](https://github.com/anthropics/claude-code-plugins) Claude Code plugin
 for the full skill chain: brainstorm -> spec -> plan -> TDD -> verify.
 
+During `/init-workflow`, powered-dev checks for superpowers and can install it with:
+
+```
+/plugin install superpowers@claude-plugins-official
+```
+
 ## Happy path
 
 After `/init-workflow` installs the scaffold:

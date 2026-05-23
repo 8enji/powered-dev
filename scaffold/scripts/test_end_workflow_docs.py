@@ -123,3 +123,15 @@ def test_readme_documents_happy_path_and_failure_recovery():
     assert "Commit fails after docs regenerate" in readme
     assert "Codex review wakes up later" in readme
     assert "CI watch fails or has no required checks" in readme
+
+
+def test_superpowers_install_command_is_documented():
+    init = _read("../init-workflow.md")
+    readme = _read("../README.md")
+    customization = _read("../docs/customization.md")
+
+    install_command = "/plugin install superpowers@claude-plugins-official"
+    assert install_command in init
+    assert install_command in readme
+    assert install_command in customization
+    assert "Install now" in init
