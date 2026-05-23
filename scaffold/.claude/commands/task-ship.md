@@ -7,7 +7,15 @@ Ship the current branch.
 ## Pre-flight
 
 1. Run `BRANCH=$(git rev-parse --abbrev-ref HEAD)`. If the result is `main` or `master`, stop and tell the user to create a branch first. If the result is the literal string `HEAD` (detached state — mid-rebase, checked out a commit directly, etc.), stop and tell the user to check out a feature branch first; do **not** attempt to push from detached HEAD.
-2. Run `python3 scripts/board.py check-merge "$BRANCH"` before committing or pushing. If it blocks because the branch still has an active plan, stop and tell the user to run `/task-finish` first.
+2. Run `python3 scripts/board.py check-merge "$BRANCH"` before committing or pushing.
+   - If it passes, continue.
+   - If it blocks because the branch still has an active plan, ask: "This branch still has an active plan. Finish it and continue shipping?" Options: **Finish and continue** / **Stop**.
+   - On **Finish and continue**:
+     1. **Verify the plan is complete.** Find the active plan file under `docs/superpowers/plans/` whose frontmatter has `status: active` and `branch: $BRANCH`. Read its body; every top-level checkbox (`- [ ]` at column 0) must be `- [x]`. If any are unticked, list them and stop.
+     2. **Verify the gate passes.** Find the gate command in `CLAUDE.md` (the `Before claiming done → run <command>` line) and run it. If it exits non-zero, surface the output and stop.
+     3. Only after both pass: run `python3 scripts/board.py finish`, then rerun `python3 scripts/board.py check-merge "$BRANCH"`. If it still blocks, surface the message and stop.
+   - On **Stop**, tell the user they can run `/task-finish` manually when ready.
+   - For any other failure, surface the command output and stop.
 3. The `PreToolUse` Bash hooks (`pre_merge_gate.sh` on `git push` / `gh *`) will also fire during the steps below. If any of them blocks, surface the hook's message and stop.
 
 ## 1. Commit + push
@@ -84,29 +92,25 @@ gh pr checks $PR --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.st
 End the turn. The harness notifies when the background process exits.
 
 **On wake:**
-1. **Codex-review mode.** If `/tmp/ship-codex-review-pr` exists, read `PR` from it, remove the marker, then continue `/request-codex-review` from its PR-mode Stage 3 wake procedure. After the review posts:
-   - If `/tmp/codex-review-$PR.event` contains `REQUEST_CHANGES`, or `/tmp/codex-review-$PR.last-message` contains any finding with `severity == "critical"`, print the PR URL and stop.
-   - If the review degraded to a raw PR comment or failed to post, print the PR URL and stop so the user can inspect it.
-   - Otherwise re-enter section 4 and present the merge prompt again.
-2. If `/tmp/ship-$PR.all-status` exists → all-checks mode (step 5). Otherwise → required-checks mode (step 3).
-3. **Required-checks mode.** Read `/tmp/ship-$PR.status`, parse exit code. If 0 → section 4. Otherwise step 4.
-4. **Required-checks mode, non-zero.** Run `gh pr checks $PR --required --json name,state` and disambiguate:
+1. If `/tmp/ship-$PR.all-status` exists → all-checks mode (wake step 4). Otherwise → required-checks mode (wake step 2).
+2. **Required-checks mode.** Read `/tmp/ship-$PR.status`, parse exit code. If 0 → Green path. Otherwise wake step 3.
+3. **Required-checks mode, non-zero.** Run `gh pr checks $PR --required --json name,state` and disambiguate:
    - No required checks configured + non-required checks exist → ask user: **Watch non-required CI** / **Merge now** / **Stop**.
    - Timing race (no checks at all) → retry with 15s pre-sleep, max 5 retries.
    - Checks still pending → re-dispatch watch.
-   - All resolved with failures → section 5.
-   - All resolved, none failed → section 4.
-5. **All-checks mode.** Same logic as step 4 but without `--required`.
+   - All resolved with failures → Red path.
+   - All resolved, none failed → Green path.
+4. **All-checks mode.** Same logic as wake step 3 but without `--required`.
 
 ## 4. Green path
 
 1. Capture branch: `BRANCH=$(git rev-parse --abbrev-ref HEAD)`.
 2. Check merge readiness: `STATUS=$(gh pr view $PR --json mergeStateStatus --jq '.mergeStateStatus')`. Handle CLEAN/BEHIND/DIRTY/BLOCKED/UNKNOWN.
-3. Ask user: "CI green on PR #<n>. Merge now?" Options:
+3. Optional follow-up: if `.claude/commands/request-codex-review.md` exists and the user wants an automated Codex review, tell them to run `/request-codex-review $PR` as a separate command before merging.
+4. Ask user: "CI green on PR #<n>. Merge now?" Options:
    - **Merge (squash)** — `gh pr merge $PR --squash --delete-branch`. Print PR URL, merge SHA, branch deleted.
    - **Don't merge yet** — print URL, stop.
    - **Open in browser** — `gh pr view $PR --web`, stop.
-   - **Request Codex review** — only show this option if `.claude/commands/request-codex-review.md` exists. If chosen, run `echo "$PR" > /tmp/ship-codex-review-pr`, then follow `/request-codex-review $PR`. That command dispatches Codex in the background and ends the turn; on wake, use Codex-review mode above to finish posting the review and either stop on `REQUEST_CHANGES`/critical findings or re-present this merge prompt.
 
 ## 5. Red path
 

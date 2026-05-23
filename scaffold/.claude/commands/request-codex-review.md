@@ -362,15 +362,10 @@ PR mode preserves the original behavior: run Codex against a pull request and po
 
 ## Stage 3 — On wake: parse findings
 
-1. Load persisted state. If this wake came from `/task-ship`, read `PR` from `/tmp/ship-codex-review-pr` first and set `STATE="/tmp/codex-review-$PR.state.json"`. Otherwise, if the current assistant turn does not know `PR`, read the state path from `/tmp/codex-review.latest-state`:
+1. Load persisted state. If the current assistant turn does not know `PR`, read the state path from `/tmp/codex-review.latest-state`:
    ```bash
    if [ -z "${STATE:-}" ]; then
-     if [ -f /tmp/ship-codex-review-pr ]; then
-       PR=$(cat /tmp/ship-codex-review-pr)
-       STATE="/tmp/codex-review-$PR.state.json"
-     else
-       STATE=$(cat /tmp/codex-review.latest-state)
-     fi
+     STATE=$(cat /tmp/codex-review.latest-state)
    fi
    MODE=$(jq -r '.mode' "$STATE")
    PR=$(jq -r '.pr' "$STATE")

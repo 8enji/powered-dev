@@ -99,6 +99,12 @@ powered-dev works without the superpowers plugin, but pairs well with it. Superp
 
 When superpowers is installed, `/task-start` automatically chains into the appropriate skill. Without it, you fill the stubs manually.
 
+During `/init-workflow`, powered-dev offers to install superpowers when it is missing:
+
+```
+/plugin install superpowers@claude-plugins-official
+```
+
 ## Disabling enforcement rings
 
 ### Disable Claude Code hooks

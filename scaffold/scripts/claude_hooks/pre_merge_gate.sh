@@ -3,7 +3,7 @@
 #
 # Fires on `git merge`, `git push`, or `gh pr create`. Blocks (exit 2) when
 # the target branch has an active plan in docs/superpowers/plans/. Forces the
-# agent to run /task-finish before merging.
+# agent to finish the active plan before merging.
 
 set -euo pipefail
 

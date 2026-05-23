@@ -22,7 +22,9 @@ Bootstrap the powered-dev workflow into this project.
      echo "NOT_INSTALLED"
    fi
    ```
-   If `NOT_INSTALLED`, explain: "The **superpowers** plugin provides a structured skill chain (brainstorm → spec → plan → TDD → verify) that pairs well with powered-dev's board system. It's recommended but not required." Then ask: "Install superpowers plugin?" Options: **Yes — show me how** / **Skip for now**. On **Yes**, provide the install instructions from the superpowers repo and then continue. On **Skip**, continue.
+   If `NOT_INSTALLED`, explain: "The **superpowers** plugin provides a structured skill chain (brainstorm → spec → plan → TDD → verify) that pairs well with powered-dev's board system. powered-dev works without it, but `/task-start` can guide implementation work more effectively when it is installed." Then ask: "Install superpowers plugin?" Options: **Install now** / **Skip for now**.
+   - On **Install now**, run `/plugin install superpowers@claude-plugins-official`. If the install succeeds, continue. If it fails, surface the error and ask whether to continue without superpowers.
+   - On **Skip for now**, continue and explain that `/task-start` will still create spec/plan stubs, but the user or agent will fill them manually.
 
 ## Step 1 — Gather configuration
 
@@ -76,11 +78,9 @@ For each file below, check if it already exists in the target project. If it doe
 | `scripts/claude_hooks/pre_merge_gate.sh` | `scripts/claude_hooks/pre_merge_gate.sh` |
 | `.claude/commands/task-start.md` | `.claude/commands/task-start.md` |
 | `.claude/commands/task-finish.md` | `.claude/commands/task-finish.md` |
-| `.claude/commands/task-backlog.md` | `.claude/commands/task-backlog.md` |
 | `.claude/commands/task-ship.md` | `.claude/commands/task-ship.md` |
 | `.github/workflows/board-gate.yml` | `.github/workflows/board-gate.yml` |
 | `docs/board/backlog.md` | `docs/board/backlog.md` |
-| `docs/board/in-flight.md` | `docs/board/in-flight.md` |
 | `docs/superpowers/INDEX.md` | `docs/superpowers/INDEX.md` |
 | `docs/superpowers/specs/.gitkeep` | `docs/superpowers/specs/.gitkeep` |
 | `docs/superpowers/plans/.gitkeep` | `docs/superpowers/plans/.gitkeep` |
@@ -196,11 +196,11 @@ Installed:
   scripts/board.py, docs_index.py, frontmatter.py
   scripts/githooks/pre-commit
   scripts/claude_hooks/pre_merge_gate.sh
-  .claude/commands/task-{start,finish,backlog,ship}.md
+  .claude/commands/task-{start,finish,ship}.md
   [if codex] .claude/commands/request-codex-review.md + codex support files
   .claude/settings.json (hooks merged)
   .github/workflows/board-gate.yml
-  docs/board/{backlog,in-flight}.md
+  docs/board/backlog.md
   docs/superpowers/ directory tree
   CLAUDE.md [created|updated]
   Git pre-commit hook [installed|appended|skipped]
@@ -209,6 +209,7 @@ Next steps:
   1. Review the changes: git diff
   2. Add tasks to docs/board/backlog.md
   3. Run /task-start to begin your first task
+  4. Run /task-ship when the task is ready to finish and ship
 ```
 
 ## Edge cases

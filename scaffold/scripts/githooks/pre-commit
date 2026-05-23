@@ -7,21 +7,12 @@ FAIL=0
 
 echo "powered-dev: running board checks..."
 
-# 1. Regenerate in-flight.md and check for drift
-python3 "$SCRIPTS/board.py" regenerate
-if ! git diff --exit-code -- docs/board/in-flight.md > /dev/null 2>&1; then
-    echo "error: docs/board/in-flight.md is out of date."
-    echo "  The regenerated file has been written. Stage it and amend your commit:"
-    echo "    git add docs/board/in-flight.md"
-    FAIL=1
-fi
-
-# 2. Lint backlog for duplicate titles
+# 1. Lint backlog for duplicate titles
 if ! python3 "$SCRIPTS/board.py" lint-backlog; then
     FAIL=1
 fi
 
-# 3. Regenerate INDEX.md and check for drift
+# 2. Regenerate INDEX.md and check for drift
 python3 "$SCRIPTS/docs_index.py" regenerate
 if ! git diff --exit-code -- docs/superpowers/INDEX.md > /dev/null 2>&1; then
     echo "error: docs/superpowers/INDEX.md is out of date."
@@ -30,7 +21,7 @@ if ! git diff --exit-code -- docs/superpowers/INDEX.md > /dev/null 2>&1; then
     FAIL=1
 fi
 
-# 4. Lint frontmatter on staged docs
+# 3. Lint frontmatter on staged docs
 STAGED_DOCS=$(git diff --cached --name-only --diff-filter=ACM -- 'docs/superpowers/specs/*.md' 'docs/superpowers/plans/*.md' 'docs/superpowers/reports/*.md' 'docs/superpowers/handoffs/*.md' 2>/dev/null || true)
 if [ -n "$STAGED_DOCS" ]; then
     if ! python3 "$SCRIPTS/docs_index.py" lint $STAGED_DOCS; then
@@ -38,7 +29,7 @@ if [ -n "$STAGED_DOCS" ]; then
     fi
 fi
 
-# 5. CLAUDE.md line budget
+# 4. CLAUDE.md line budget
 MAX_LINES=${POWERED_DEV_CLAUDE_MD_MAX_LINES:-50}
 if [ -f "$REPO_ROOT/CLAUDE.md" ]; then
     LINES=$(wc -l < "$REPO_ROOT/CLAUDE.md")
