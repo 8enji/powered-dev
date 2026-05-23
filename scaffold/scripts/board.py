@@ -361,22 +361,23 @@ def _cmd_abandon() -> None:
 
 def _cmd_start(title: str, tier: str) -> None:
     """Start a task: scaffold plan stub (+ spec stub for full tier),
-    remove from backlog, regenerate index, git add touched files.
+    remove from backlog if the title matches an entry, regenerate index,
+    git add touched files.
     """
     # Validate tier
     if tier not in ("lite", "full"):
         print(f"ERROR: Invalid tier '{tier}'. Must be 'lite' or 'full'.")
         sys.exit(1)
 
-    # Check entry exists in backlog
-    if not BACKLOG_PATH.exists():
-        print(f"ERROR: Backlog not found at {BACKLOG_PATH}")
-        sys.exit(1)
-
-    offsets = _find_backlog_entry(BACKLOG_PATH, title)
-    if offsets is None:
-        print(f"ERROR: Backlog entry not found: '{title}'")
-        sys.exit(1)
+    # Look up the entry in the backlog if it exists. A missing file or
+    # missing entry means this is an ad hoc task — fine, just skip the
+    # removal step later.
+    backlog_match = (
+        BACKLOG_PATH.exists()
+        and _find_backlog_entry(BACKLOG_PATH, title) is not None
+    )
+    if not backlog_match:
+        print(f"No matching backlog entry for '{title}' — creating ad hoc task.")
 
     branch = _current_branch()
 
@@ -427,10 +428,11 @@ def _cmd_start(title: str, tier: str) -> None:
     print(f"Created {plan_path}")
     touched.append(plan_path)
 
-    # Remove from backlog
-    _remove_backlog_entry(BACKLOG_PATH, title)
-    print(f"Removed '{title}' from backlog.")
-    touched.append(BACKLOG_PATH)
+    # Remove from backlog only if we matched an entry
+    if backlog_match:
+        _remove_backlog_entry(BACKLOG_PATH, title)
+        print(f"Removed '{title}' from backlog.")
+        touched.append(BACKLOG_PATH)
 
     # Regenerate index
     _regen_index()

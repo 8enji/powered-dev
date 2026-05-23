@@ -143,3 +143,32 @@ def test_board_module_has_no_in_flight_symbols():
     """Negative covenant: in-flight artifact and its helpers are fully removed."""
     for name in ("IN_FLIGHT_PATH", "AUTO_HEADER", "build_in_flight", "_fmt_inflight_entry"):
         assert not hasattr(board, name), f"board.{name} should be removed"
+
+
+def test_start_creates_ad_hoc_when_title_absent_from_backlog(tmp_path):
+    """Ad hoc lite: title arg is not in the backlog. Backlog untouched, plan scaffolded."""
+    docs = tmp_path / "docs" / "superpowers"
+    plans = docs / "plans"
+    specs = docs / "specs"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Other Task\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "SPECS_ROOT", specs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_current_branch", return_value="feature/adhoc"),
+        mock.patch.object(board, "_today", return_value="2026-05-23"),
+        mock.patch.object(board, "_git_add") as git_add,
+    ):
+        board._cmd_start("Ad Hoc Task", "lite")
+
+    staged = git_add.call_args.args[0]
+    assert plans / "2026-05-23-ad-hoc-task.md" in staged
+    assert index in staged
+    assert backlog not in staged
+    assert backlog.read_text() == "## Other Task\n\nSome notes.\n"
