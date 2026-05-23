@@ -44,17 +44,20 @@ The tier affects the plan template (full plans have a `related.spec` field) and 
 
 ## Codex review
 
-`/task-codex-review` is optional — installed only if you opt in during `/init-workflow`. It requires:
+`/request-codex-review` is optional — installed only if you opt in during `/init-workflow`. It can review either a GitHub PR or local-only changes that have not been opened as a PR yet. It requires:
 
 - [Codex.app](https://codex.openai.com/) installed locally.
-- `gh` CLI authenticated (`gh auth login`).
+- `jq` available on PATH.
+- For PR reviews: `gh` CLI authenticated (`gh auth login`).
 
-The review dispatches Codex in a read-only sandbox against the PR diff, parses structured findings, and posts them as inline GitHub PR review comments. Findings with `severity: critical` trigger `REQUEST_CHANGES`; everything else is `COMMENT`.
+For PR reviews, the command dispatches Codex in a read-only sandbox against the PR diff, parses structured findings, and posts them as inline GitHub PR review comments. Findings with `severity: critical` trigger `REQUEST_CHANGES`; everything else is `COMMENT`.
+
+For local-change reviews, run `/request-codex-review local` or run `/request-codex-review` from a branch without an open PR. The command reviews staged, unstaged, untracked, and locally committed branch changes, then writes a markdown report under `docs/superpowers/reports/`.
 
 To add it after initial setup, copy these files from the powered-dev scaffold:
 
 ```
-.claude/commands/task-codex-review.md
+.claude/commands/request-codex-review.md
 .claude/codex/review-prompt.md
 .claude/codex/review-findings.schema.json
 ```

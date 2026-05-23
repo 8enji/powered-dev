@@ -37,8 +37,8 @@ Use `AskUserQuestion` for each. Collect all answers before proceeding.
    - Options: **`make all`** / **`npm run lint && npm test`** / **`ruff check . && pytest`** / Custom
    - Required.
 
-3. **Codex review** — whether to install the `/task-codex-review` slash command.
-   - Question: "Install Codex automated PR review (`/task-codex-review`)? Requires Codex.app."
+3. **Codex review** — whether to install the `/request-codex-review` slash command.
+   - Question: "Install Codex automated review (`/request-codex-review`)? Supports PR and local-change reviews. Requires Codex.app."
    - Options: **Yes** / **No**
    - Default: No.
 
@@ -91,7 +91,7 @@ For each file below, check if it already exists in the target project. If it doe
 
 | Source (in staging) | Destination (in repo) |
 |---|---|
-| `.claude/commands/task-codex-review.md` | `.claude/commands/task-codex-review.md` |
+| `.claude/commands/request-codex-review.md` | `.claude/commands/request-codex-review.md` |
 | `.claude/codex/review-prompt.md` | `.claude/codex/review-prompt.md` |
 | `.claude/codex/review-findings.schema.json` | `.claude/codex/review-findings.schema.json` |
 
@@ -197,7 +197,7 @@ Installed:
   scripts/githooks/pre-commit
   scripts/claude_hooks/pre_merge_gate.sh
   .claude/commands/task-{start,finish,backlog,ship}.md
-  [if codex] .claude/commands/task-codex-review.md + codex support files
+  [if codex] .claude/commands/request-codex-review.md + codex support files
   .claude/settings.json (hooks merged)
   .github/workflows/board-gate.yml
   docs/board/{backlog,in-flight}.md
