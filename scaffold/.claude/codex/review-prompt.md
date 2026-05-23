@@ -1,8 +1,8 @@
-You are reviewing a pull request. The PR metadata appears above this prompt (title, base branch, head SHA, optional focus from the invoker). You are running inside a git worktree pinned to the PR head with read-only filesystem access.
+You are reviewing a pull request or local change set. The review metadata appears above this prompt (PR metadata or local review metadata, plus optional focus from the invoker). Use the metadata above to identify the review type. You are running inside a git worktree with read-only filesystem access.
 
 ## Process
 
-1. Read the diff: `git diff origin/<base>...HEAD`.
+1. Read the relevant diff. For PR reviews, use `git diff origin/<base>...HEAD`. For local reviews, inspect the diff files listed in the metadata and read any untracked files named in the touched-file list.
 2. For each non-trivial change, evaluate it against the surrounding code. Use your filesystem access to read related files, callers, tests, and configuration. Do not limit yourself to the diff.
 3. Identify bugs, security issues, design problems, and stylistic concerns introduced by the change.
 4. Classify each finding by severity:

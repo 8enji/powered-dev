@@ -91,7 +91,7 @@ scripts/
     task-finish.md     Mark current task done
     task-backlog.md    View and triage backlog
     task-ship.md       Commit, push, PR, CI, merge
-    task-codex-review.md  (optional) Codex-powered PR review
+    request-codex-review.md  (optional) Codex-powered PR/local review
   codex/
     review-prompt.md           Codex review instructions
     review-findings.schema.json  Output schema for findings

@@ -6,8 +6,9 @@ Ship the current branch.
 
 ## Pre-flight
 
-1. Run `git rev-parse --abbrev-ref HEAD`. If the result is `main` or `master`, stop and tell the user to create a branch first. If the result is the literal string `HEAD` (detached state — mid-rebase, checked out a commit directly, etc.), stop and tell the user to check out a feature branch first; do **not** attempt to push from detached HEAD.
-2. The `PreToolUse` Bash hooks (`pre_merge_gate.sh` on `git push` / `gh *`) will fire during the steps below. If any of them blocks (e.g., active plan not flipped, lint failure), surface the hook's message and stop. For an active-plan block, tell the user to run `/task-finish` first.
+1. Run `BRANCH=$(git rev-parse --abbrev-ref HEAD)`. If the result is `main` or `master`, stop and tell the user to create a branch first. If the result is the literal string `HEAD` (detached state — mid-rebase, checked out a commit directly, etc.), stop and tell the user to check out a feature branch first; do **not** attempt to push from detached HEAD.
+2. Run `python3 scripts/board.py check-merge "$BRANCH"` before committing or pushing. If it blocks because the branch still has an active plan, stop and tell the user to run `/task-finish` first.
+3. The `PreToolUse` Bash hooks (`pre_merge_gate.sh` on `git push` / `gh *`) will also fire during the steps below. If any of them blocks, surface the hook's message and stop.
 
 ## 1. Commit + push
 
@@ -36,19 +37,21 @@ Ship the current branch.
 
 ## 2. Open or reuse PR
 
-1. Get current state: `gh pr view --json number,url,state` (operates on the current branch by default).
+1. Get current state: `gh pr view --json number,url,state,baseRefName` (operates on the current branch by default).
 2. Branch on the result:
-   - `state: "OPEN"` → reuse. Capture `number` as `$PR` and `url` as `$PR_URL`. Print "Reusing open PR #<n>: <url>". Continue to section 3.
+   - `state: "OPEN"` → reuse. Capture `number` as `$PR`, `url` as `$PR_URL`, and `baseRefName` as `$BASE`. Print "Reusing open PR #<n>: <url>". Continue to section 3.
    - `state: "MERGED"` → print "PR #<n> already merged: <url>". Stop.
    - `state: "CLOSED"` → print "PR #<n> closed (not merged): <url>. Reopen manually if you want to ship this branch." Stop.
    - Command exits non-zero with no JSON on stdout → no PR exists; continue to step 3.
 3. Draft a PR title and body for a new PR:
-   1. Get commits since main: `git log origin/main..HEAD --oneline`.
-   2. Title: under 70 chars. If there is exactly one commit, use its subject verbatim. Otherwise compose a title from the subjects.
-   3. Body: `## Summary` (1-3 bullets) + `## Test plan` (markdown checklist) + trailing `Generated with [Claude Code](https://claude.com/claude-code)` line.
+   1. Resolve the default base branch: `BASE=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')`.
+   2. Fetch the base ref if needed: `git fetch origin "$BASE:refs/remotes/origin/$BASE"`.
+   3. Get commits since the base branch: `git log "origin/$BASE..HEAD" --oneline`.
+   4. Title: under 70 chars. If there is exactly one commit, use its subject verbatim. Otherwise compose a title from the subjects.
+   5. Body: `## Summary` (1-3 bullets) + `## Test plan` (markdown checklist) + trailing `Generated with [Claude Code](https://claude.com/claude-code)` line.
 4. Open the PR via heredoc.
    ```bash
-   gh pr create --title "<title>" --body "$(cat <<'EOF'
+   gh pr create --base "$BASE" --title "<title>" --body "$(cat <<'EOF'
    ## Summary
    - ...
 
@@ -81,15 +84,19 @@ gh pr checks $PR --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.st
 End the turn. The harness notifies when the background process exits.
 
 **On wake:**
-1. If `/tmp/ship-$PR.all-status` exists → all-checks mode (step 4). Otherwise → required-checks mode (step 2).
-2. **Required-checks mode.** Read `/tmp/ship-$PR.status`, parse exit code. If 0 → section 4. Otherwise step 3.
-3. **Required-checks mode, non-zero.** Run `gh pr checks $PR --required --json name,state` and disambiguate:
+1. **Codex-review mode.** If `/tmp/ship-codex-review-pr` exists, read `PR` from it, remove the marker, then continue `/request-codex-review` from its PR-mode Stage 3 wake procedure. After the review posts:
+   - If `/tmp/codex-review-$PR.event` contains `REQUEST_CHANGES`, or `/tmp/codex-review-$PR.last-message` contains any finding with `severity == "critical"`, print the PR URL and stop.
+   - If the review degraded to a raw PR comment or failed to post, print the PR URL and stop so the user can inspect it.
+   - Otherwise re-enter section 4 and present the merge prompt again.
+2. If `/tmp/ship-$PR.all-status` exists → all-checks mode (step 5). Otherwise → required-checks mode (step 3).
+3. **Required-checks mode.** Read `/tmp/ship-$PR.status`, parse exit code. If 0 → section 4. Otherwise step 4.
+4. **Required-checks mode, non-zero.** Run `gh pr checks $PR --required --json name,state` and disambiguate:
    - No required checks configured + non-required checks exist → ask user: **Watch non-required CI** / **Merge now** / **Stop**.
    - Timing race (no checks at all) → retry with 15s pre-sleep, max 5 retries.
    - Checks still pending → re-dispatch watch.
    - All resolved with failures → section 5.
    - All resolved, none failed → section 4.
-4. **All-checks mode.** Same logic as step 3 but without `--required`.
+5. **All-checks mode.** Same logic as step 4 but without `--required`.
 
 ## 4. Green path
 
@@ -99,7 +106,7 @@ End the turn. The harness notifies when the background process exits.
    - **Merge (squash)** — `gh pr merge $PR --squash --delete-branch`. Print PR URL, merge SHA, branch deleted.
    - **Don't merge yet** — print URL, stop.
    - **Open in browser** — `gh pr view $PR --web`, stop.
-   - **Request Codex review** — only show this option if `.claude/commands/task-codex-review.md` exists. If chosen, follow the procedure in that file. After review posts, if CHANGES_REQUESTED → stop. Otherwise re-present the merge prompt.
+   - **Request Codex review** — only show this option if `.claude/commands/request-codex-review.md` exists. If chosen, run `echo "$PR" > /tmp/ship-codex-review-pr`, then follow `/request-codex-review $PR`. That command dispatches Codex in the background and ends the turn; on wake, use Codex-review mode above to finish posting the review and either stop on `REQUEST_CHANGES`/critical findings or re-present this merge prompt.
 
 ## 5. Red path
 
