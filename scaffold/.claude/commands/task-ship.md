@@ -10,7 +10,10 @@ Ship the current branch.
 2. Run `python3 scripts/board.py check-merge "$BRANCH"` before committing or pushing.
    - If it passes, continue.
    - If it blocks because the branch still has an active plan, ask: "This branch still has an active plan. Finish it and continue shipping?" Options: **Finish and continue** / **Stop**.
-   - On **Finish and continue**, first confirm the plan is genuinely complete: all top-level checkboxes ticked, and the gate command documented in `CLAUDE.md` passes. Then run `python3 scripts/board.py finish`, review the staged diff, and rerun `python3 scripts/board.py check-merge "$BRANCH"`. If it still blocks, surface the message and stop.
+   - On **Finish and continue**:
+     1. **Verify the plan is complete.** Find the active plan file under `docs/superpowers/plans/` whose frontmatter has `status: active` and `branch: $BRANCH`. Read its body; every top-level checkbox (`- [ ]` at column 0) must be `- [x]`. If any are unticked, list them and stop.
+     2. **Verify the gate passes.** Find the gate command in `CLAUDE.md` (the `Before claiming done → run <command>` line) and run it. If it exits non-zero, surface the output and stop.
+     3. Only after both pass: run `python3 scripts/board.py finish`, then rerun `python3 scripts/board.py check-merge "$BRANCH"`. If it still blocks, surface the message and stop.
    - On **Stop**, tell the user they can run `/task-finish` manually when ready.
    - For any other failure, surface the command output and stop.
 3. The `PreToolUse` Bash hooks (`pre_merge_gate.sh` on `git push` / `gh *`) will also fire during the steps below. If any of them blocks, surface the hook's message and stop.
