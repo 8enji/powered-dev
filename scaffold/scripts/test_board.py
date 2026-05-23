@@ -78,7 +78,6 @@ def test_start_rejects_duplicate_active_plan(tmp_path):
     with (
         mock.patch.object(board, "PLANS_ROOT", plans),
         mock.patch.object(board, "BACKLOG_PATH", backlog),
-        mock.patch.object(board, "BOARD_ROOT", tmp_path / "board"),
         mock.patch.object(board, "_current_branch", return_value="feature/dup"),
     ):
         import pytest
@@ -102,9 +101,7 @@ def test_start_stages_backlog_plan_and_index_without_in_flight(tmp_path):
         mock.patch.object(board, "PLANS_ROOT", plans),
         mock.patch.object(board, "SPECS_ROOT", specs),
         mock.patch.object(board, "BACKLOG_PATH", backlog),
-        mock.patch.object(board, "BOARD_ROOT", backlog.parent),
         mock.patch.object(board, "INDEX_PATH", index),
-        mock.patch.object(board, "IN_FLIGHT_PATH", in_flight, create=True),
         mock.patch.object(board, "_current_branch", return_value="feature/new"),
         mock.patch.object(board, "_today", return_value="2026-05-21"),
         mock.patch.object(board, "_git_add") as git_add,
@@ -130,8 +127,6 @@ def test_finish_stages_plan_and_index_without_in_flight(tmp_path):
         mock.patch.object(board, "DOCS_ROOT", docs),
         mock.patch.object(board, "PLANS_ROOT", plans),
         mock.patch.object(board, "INDEX_PATH", index),
-        mock.patch.object(board, "BOARD_ROOT", in_flight.parent),
-        mock.patch.object(board, "IN_FLIGHT_PATH", in_flight, create=True),
         mock.patch.object(board, "_current_branch", return_value="feature/active"),
         mock.patch.object(board, "_git_add") as git_add,
     ):
@@ -142,3 +137,9 @@ def test_finish_stages_plan_and_index_without_in_flight(tmp_path):
     assert index in staged
     assert in_flight not in staged
     assert not in_flight.exists()
+
+
+def test_board_module_has_no_in_flight_symbols():
+    """Negative covenant: in-flight artifact and its helpers are fully removed."""
+    for name in ("IN_FLIGHT_PATH", "AUTO_HEADER", "build_in_flight", "_fmt_inflight_entry"):
+        assert not hasattr(board, name), f"board.{name} should be removed"
