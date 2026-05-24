@@ -197,3 +197,50 @@ def test_filter_empty_touched_drops_everything():
     kept, dropped = filter_findings(findings, [])
     assert kept == []
     assert dropped == 1
+
+
+from codex_review import compute_event, severity_histogram
+
+
+def test_event_critical_triggers_request_changes():
+    findings = [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"},
+        {"path": "b.py", "line": 2, "side": "RIGHT", "severity": "critical", "body": "y"},
+    ]
+    assert compute_event(findings) == "REQUEST_CHANGES"
+
+
+def test_event_no_critical_is_comment():
+    findings = [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"},
+        {"path": "b.py", "line": 2, "side": "RIGHT", "severity": "major", "body": "y"},
+    ]
+    assert compute_event(findings) == "COMMENT"
+
+
+def test_event_empty_findings_is_comment():
+    assert compute_event([]) == "COMMENT"
+
+
+def test_histogram_all_severities():
+    findings = [
+        {"severity": "critical"} | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "critical"} | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "major"}    | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "minor"}    | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "minor"}    | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "minor"}    | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "nit"}      | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+    ]
+    assert severity_histogram(findings) == "2 critical · 1 major · 3 minor · 1 nit"
+
+
+def test_histogram_missing_severities_show_zero():
+    findings = [
+        {"severity": "minor"} | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+    ]
+    assert severity_histogram(findings) == "0 critical · 0 major · 1 minor · 0 nit"
+
+
+def test_histogram_empty_findings():
+    assert severity_histogram([]) == "0 critical · 0 major · 0 minor · 0 nit"

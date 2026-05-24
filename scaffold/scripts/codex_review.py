@@ -140,3 +140,24 @@ def filter_findings(
     kept = [f for f in findings if f.get("path") in touched]
     dropped = len(findings) - len(kept)
     return kept, dropped
+
+
+def compute_event(findings: list[dict]) -> str:
+    """Decide the GitHub review event: REQUEST_CHANGES if any critical, else COMMENT."""
+    for f in findings:
+        if f.get("severity") == "critical":
+            return "REQUEST_CHANGES"
+    return "COMMENT"
+
+
+def severity_histogram(findings: list[dict]) -> str:
+    """Produce 'X critical · Y major · Z minor · W nit' summary string."""
+    counts = {"critical": 0, "major": 0, "minor": 0, "nit": 0}
+    for f in findings:
+        sev = f.get("severity")
+        if sev in counts:
+            counts[sev] += 1
+    return (
+        f"{counts['critical']} critical · {counts['major']} major · "
+        f"{counts['minor']} minor · {counts['nit']} nit"
+    )
