@@ -229,3 +229,57 @@ def test_start_full_tier_ad_hoc_creates_spec_and_plan(tmp_path):
     assert plans / "2026-05-23-ad-hoc-feature.md" in staged
     assert index in staged
     assert backlog not in staged
+
+
+def test_set_related_scalar_creates_related_block_when_absent(tmp_path):
+    """Plan has no related: block. _set_related_scalar inserts one."""
+    p = tmp_path / "plan.md"
+    p.write_text("---\nstatus: done\ntype: plan\ndate: 2026-05-24\nsummary: T\nbranch: b\ntier: lite\n---\n\n# Body\n")
+    board._set_related_scalar(p, "pr", 42)
+    text = p.read_text()
+    assert "related:\n  pr: 42\n" in text
+    # Body preserved
+    assert "# Body" in text
+
+
+def test_set_related_scalar_adds_key_to_existing_related(tmp_path):
+    """Plan has related: with spec. _set_related_scalar adds pr alongside."""
+    p = tmp_path / "plan.md"
+    p.write_text(
+        "---\nstatus: done\ntype: plan\ndate: 2026-05-24\nsummary: T\nbranch: b\ntier: full\n"
+        "related:\n  spec: foo-design.md\n---\n\n# Body\n"
+    )
+    board._set_related_scalar(p, "pr", 42)
+    text = p.read_text()
+    assert "  spec: foo-design.md" in text
+    assert "  pr: 42" in text
+
+
+def test_set_related_scalar_replaces_existing_key(tmp_path):
+    """Plan already has pr; _set_related_scalar overwrites it."""
+    p = tmp_path / "plan.md"
+    p.write_text(
+        "---\nstatus: done\ntype: plan\ndate: 2026-05-24\nsummary: T\nbranch: b\ntier: lite\n"
+        "related:\n  pr: 7\n---\n"
+    )
+    board._set_related_scalar(p, "pr", 42)
+    text = p.read_text()
+    assert "  pr: 42" in text
+    assert "  pr: 7" not in text
+
+
+def test_set_related_scalar_preserves_other_frontmatter_lines(tmp_path):
+    """Non-related frontmatter keys, blank lines, and body are preserved."""
+    original = (
+        "---\nstatus: done\ntype: plan\ndate: 2026-05-24\nsummary: T\n"
+        "branch: feature/x\ntier: full\nrelated:\n  spec: foo.md\n---\n\n# H1\n\nBody.\n"
+    )
+    p = tmp_path / "plan.md"
+    p.write_text(original)
+    board._set_related_scalar(p, "pr", 99)
+    text = p.read_text()
+    # Original lines unchanged
+    for fragment in ("status: done", "type: plan", "date: 2026-05-24", "summary: T",
+                     "branch: feature/x", "tier: full", "  spec: foo.md", "# H1", "Body."):
+        assert fragment in text
+    assert "  pr: 99" in text

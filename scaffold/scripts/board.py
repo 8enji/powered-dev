@@ -289,6 +289,76 @@ def _flip_status_in_file(path: Path, new_status: str) -> None:
     path.write_text(new_text, encoding="utf-8")
 
 
+def _edit_frontmatter_related(path: Path, mutator) -> None:
+    """Apply mutator to the file's `related` dict and rewrite the frontmatter block.
+
+    mutator: Callable[[dict[str, Any]], dict[str, Any]] — receives the current
+    related dict (empty dict if absent), returns the new related dict.
+
+    Preserves all non-related frontmatter lines and the body verbatim. The
+    `related:` block is fully rewritten using `key: value` for scalars and
+    `key: [v1, v2]` for lists.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+
+    if not lines or lines[0] != "---":
+        return  # No frontmatter; nothing to edit
+    fm_end = None
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            fm_end = i
+            break
+    if fm_end is None:
+        return  # Malformed frontmatter
+
+    related_start = None
+    related_end = None
+    for i in range(1, fm_end):
+        if re.match(r"^related\s*:\s*$", lines[i]):
+            related_start = i
+            j = i + 1
+            while j < fm_end:
+                if lines[j].startswith("  ") or lines[j].strip() == "":
+                    j += 1
+                else:
+                    break
+            related_end = j
+            break
+
+    fm = parse_frontmatter(path) or {}
+    current = fm.get("related")
+    current_related: dict[str, Any] = current if isinstance(current, dict) else {}
+
+    new_related = mutator(dict(current_related))
+
+    if new_related:
+        related_lines = ["related:"]
+        for k, v in new_related.items():
+            if isinstance(v, list):
+                rendered = "[" + ", ".join(str(item) for item in v) + "]"
+                related_lines.append(f"  {k}: {rendered}")
+            else:
+                related_lines.append(f"  {k}: {v}")
+    else:
+        related_lines = []
+
+    if related_start is not None:
+        new_lines = lines[:related_start] + related_lines + lines[related_end:]
+    else:
+        new_lines = lines[:fm_end] + related_lines + lines[fm_end:]
+
+    path.write_text("\n".join(new_lines), encoding="utf-8")
+
+
+def _set_related_scalar(path: Path, key: str, value: Any) -> None:
+    """Set `related.<key>: <value>` in the file's frontmatter. Idempotent."""
+    def mutator(d: dict[str, Any]) -> dict[str, Any]:
+        d[key] = value
+        return d
+    _edit_frontmatter_related(path, mutator)
+
+
 def _find_active_plan_for_branch(branch: str) -> tuple[Path, dict[str, Any]] | None:
     """Find the one active plan for a branch. Returns (path, fm) or None."""
     all_plans = _collect_plans(PLANS_ROOT)
