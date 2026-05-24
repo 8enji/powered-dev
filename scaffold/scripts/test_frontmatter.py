@@ -59,3 +59,48 @@ def test_multiline_nested(tmp_path):
     assert fm["tier"] == "full"
     assert fm["related"]["spec"] == "design.md"
     assert fm["related"]["pr"] == "99"
+
+
+def test_parse_flow_list_at_top_level(tmp_path):
+    """Flow-style list at the top level parses to a Python list of strings."""
+    p = _write(tmp_path, "---\nstatus: done\ntags: [a, b, c]\n---\n")
+    fm = parse_frontmatter(p)
+    assert fm is not None
+    assert fm["tags"] == ["a", "b", "c"]
+
+
+def test_parse_flow_list_inside_nested_mapping(tmp_path):
+    """Flow-style list inside `related:` parses to a Python list."""
+    content = "---\nstatus: done\ntype: spec\ndate: 2026-05-24\nsummary: Test\nrelated:\n  prs: [42, 51]\n---\n"
+    p = _write(tmp_path, content)
+    fm = parse_frontmatter(p)
+    assert fm is not None
+    assert fm["related"] == {"prs": ["42", "51"]}
+
+
+def test_parse_empty_flow_list(tmp_path):
+    """An empty flow list parses to an empty Python list."""
+    p = _write(tmp_path, "---\nstatus: done\ntags: []\n---\n")
+    fm = parse_frontmatter(p)
+    assert fm is not None
+    assert fm["tags"] == []
+
+
+def test_parse_flow_list_with_quoted_strings(tmp_path):
+    """Quoted items in a flow list have their quotes stripped."""
+    p = _write(tmp_path, '---\nstatus: done\ntags: ["a", "b"]\n---\n')
+    fm = parse_frontmatter(p)
+    assert fm is not None
+    assert fm["tags"] == ["a", "b"]
+
+
+def test_block_style_list_still_unsupported(tmp_path):
+    """Block-style `- item` lists are not supported. Nested branch returns empty dict-or-string."""
+    # The block form: `key:\n  - a\n  - b\n`. The nested-mapping branch looks for
+    # `  child:` lines; finding none, it returns the empty-dict-becomes-empty-string
+    # fallback. This test pins the current behavior so a future parser rewrite that
+    # silently changes it gets caught.
+    p = _write(tmp_path, "---\nstatus: done\nkey:\n  - a\n  - b\n---\n")
+    fm = parse_frontmatter(p)
+    assert fm is not None
+    assert fm["key"] == ""
