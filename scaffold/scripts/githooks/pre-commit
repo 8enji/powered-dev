@@ -12,13 +12,15 @@ if ! python3 "$SCRIPTS/board.py" lint-backlog; then
     FAIL=1
 fi
 
-# 2. Regenerate INDEX.md and check for drift
-python3 "$SCRIPTS/docs_index.py" regenerate
-if ! git diff --exit-code -- docs/superpowers/INDEX.md > /dev/null 2>&1; then
-    echo "error: docs/superpowers/INDEX.md is out of date."
-    echo "  The regenerated file has been written. Stage it and amend your commit:"
-    echo "    git add docs/superpowers/INDEX.md"
-    FAIL=1
+# 2. Regenerate INDEX.md and check for drift (only when superpowers docs are staged)
+if git diff --cached --name-only | grep -q '^docs/superpowers/'; then
+    python3 "$SCRIPTS/docs_index.py" regenerate
+    if ! git diff --exit-code -- docs/superpowers/INDEX.md > /dev/null 2>&1; then
+        echo "error: docs/superpowers/INDEX.md is out of date."
+        echo "  The regenerated file has been written. Stage it and amend your commit:"
+        echo "    git add docs/superpowers/INDEX.md"
+        FAIL=1
+    fi
 fi
 
 # 3. Lint frontmatter on staged docs
