@@ -359,6 +359,22 @@ def _set_related_scalar(path: Path, key: str, value: Any) -> None:
     _edit_frontmatter_related(path, mutator)
 
 
+def _append_related_list(path: Path, key: str, value: int) -> None:
+    """Append `value` to the list at `related.<key>`, deduplicated. Idempotent.
+
+    Compares as strings since parsed values come back as strings.
+    """
+    def mutator(d: dict[str, Any]) -> dict[str, Any]:
+        existing = d.get(key, [])
+        if not isinstance(existing, list):
+            existing = [existing] if existing else []
+        if str(value) not in [str(x) for x in existing]:
+            existing.append(value)
+        d[key] = existing
+        return d
+    _edit_frontmatter_related(path, mutator)
+
+
 def _find_active_plan_for_branch(branch: str) -> tuple[Path, dict[str, Any]] | None:
     """Find the one active plan for a branch. Returns (path, fm) or None."""
     all_plans = _collect_plans(PLANS_ROOT)

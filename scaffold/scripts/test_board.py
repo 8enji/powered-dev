@@ -283,3 +283,45 @@ def test_set_related_scalar_preserves_other_frontmatter_lines(tmp_path):
                      "branch: feature/x", "tier: full", "  spec: foo.md", "# H1", "Body."):
         assert fragment in text
     assert "  pr: 99" in text
+
+
+def test_append_related_list_creates_list_when_absent(tmp_path):
+    """Spec has no related.prs. _append_related_list creates it."""
+    p = tmp_path / "spec.md"
+    p.write_text("---\nstatus: done\ntype: spec\ndate: 2026-05-24\nsummary: T\n---\n")
+    board._append_related_list(p, "prs", 42)
+    text = p.read_text()
+    assert "related:\n  prs: [42]\n" in text
+
+
+def test_append_related_list_appends_to_existing_list(tmp_path):
+    """Spec has related.prs: [42]. Appending 51 makes [42, 51]."""
+    p = tmp_path / "spec.md"
+    p.write_text("---\nstatus: done\ntype: spec\ndate: 2026-05-24\nsummary: T\nrelated:\n  prs: [42]\n---\n")
+    board._append_related_list(p, "prs", 51)
+    text = p.read_text()
+    assert "  prs: [42, 51]" in text
+
+
+def test_append_related_list_dedupes(tmp_path):
+    """Appending 42 to [42] is a no-op."""
+    p = tmp_path / "spec.md"
+    original = "---\nstatus: done\ntype: spec\ndate: 2026-05-24\nsummary: T\nrelated:\n  prs: [42]\n---\n"
+    p.write_text(original)
+    board._append_related_list(p, "prs", 42)
+    text = p.read_text()
+    assert "  prs: [42]" in text
+    assert "  prs: [42, 42]" not in text
+
+
+def test_append_related_list_preserves_other_related_keys(tmp_path):
+    """Spec has related.spec; appending to related.prs keeps spec."""
+    p = tmp_path / "spec.md"
+    p.write_text(
+        "---\nstatus: done\ntype: spec\ndate: 2026-05-24\nsummary: T\n"
+        "related:\n  spec: foo-design.md\n---\n"
+    )
+    board._append_related_list(p, "prs", 42)
+    text = p.read_text()
+    assert "  spec: foo-design.md" in text
+    assert "  prs: [42]" in text
