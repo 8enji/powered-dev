@@ -471,3 +471,47 @@ def resolve_pr_metadata(
         head_sha=pr_data["headRefOid"],
         title=pr_data["title"],
     )
+
+
+def setup_pr_worktree(invoking_repo: Path, worktree_path: Path, pr_sha_or_ref: str) -> None:
+    """Create a git worktree at `worktree_path` checked out to the PR head.
+
+    Removes any prior worktree at this path first. Caller is responsible for cleanup.
+    `pr_sha_or_ref` can be a refspec name (e.g. `refs/remotes/origin/pr-123-head`) or SHA.
+    """
+    listing = _run_git(invoking_repo, ["worktree", "list", "--porcelain"])
+    if f"worktree {worktree_path}" in listing:
+        subprocess.run(
+            ["git", "-C", str(invoking_repo), "worktree", "remove", "--force", str(worktree_path)],
+            capture_output=True,
+        )
+    if worktree_path.exists():
+        subprocess.run(["rm", "-rf", str(worktree_path)], capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(invoking_repo), "worktree", "add", str(worktree_path), pr_sha_or_ref],
+        check=True,
+        capture_output=True,
+    )
+
+
+def cleanup_pr_worktree(invoking_repo: Path, worktree_path: Path) -> None:
+    """Remove the worktree if it exists. Best-effort: failures are swallowed."""
+    if not worktree_path.exists():
+        return
+    subprocess.run(
+        ["git", "-C", str(invoking_repo), "worktree", "remove", "--force", str(worktree_path)],
+        capture_output=True,
+    )
+    subprocess.run(["rm", "-rf", str(worktree_path)], capture_output=True)
+
+
+def collect_pr_touched_files(repo: Path, base: str, review_dir: Path) -> list[str]:
+    """Run `git diff origin/<base>...HEAD --name-only` and persist + return the list."""
+    review_dir.mkdir(parents=True, exist_ok=True)
+    out = _run_git(repo, ["diff", f"origin/{base}...HEAD", "--name-only"])
+    # Fall back to local base (no `origin/` prefix) if the remote-tracking ref isn't there.
+    if not out.strip():
+        out = _run_git(repo, ["diff", f"{base}...HEAD", "--name-only"])
+    touched = sorted({line.strip() for line in out.splitlines() if line.strip()})
+    (review_dir / "touched-files").write_text("\n".join(touched) + ("\n" if touched else ""), encoding="utf-8")
+    return touched

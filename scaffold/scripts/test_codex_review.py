@@ -645,3 +645,41 @@ def test_resolve_pr_no_pr_on_current_branch_raises():
     runner = _FakeRunner([(["gh", "pr", "view"], ("", 1))])
     with pytest.raises(LookupError):
         resolve_pr_metadata(identifier=None, runner=runner)
+
+
+from codex_review import setup_pr_worktree, collect_pr_touched_files
+
+
+def test_setup_pr_worktree_creates_dir(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-b", "pr-source"], check=True)
+    (repo / "pr.py").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "pr.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "pr"], check=True)
+    pr_sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+
+    wt = tmp_path / "worktree"
+    setup_pr_worktree(repo, wt, pr_sha)
+    assert (wt / "pr.py").exists()
+
+
+def test_collect_pr_touched_files(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-b", "feature"], check=True)
+    (repo / "added.py").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "added.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "feat"], check=True)
+
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+    touched = collect_pr_touched_files(repo, "main", review_dir)
+    assert "added.py" in touched
+    assert (review_dir / "touched-files").read_text().strip() == "added.py"
