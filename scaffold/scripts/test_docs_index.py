@@ -162,3 +162,26 @@ def test_lint_warns_on_done_spec_with_empty_related_prs(tmp_path):
     )
     _, warnings = lint([p])
     assert any("related.prs" in w for w in warnings)
+
+
+def test_fmt_entry_renders_list_as_bracketed_comma_join(tmp_path):
+    """INDEX line for a doc with related.prs: [42, 51] contains 'prs: [42, 51]'."""
+    docs = tmp_path / "docs" / "superpowers"
+    for sub in ("specs", "plans", "reports", "handoffs"):
+        (docs / sub).mkdir(parents=True)
+
+    (docs / "specs" / "2026-05-24-listed-design.md").write_text(textwrap.dedent("""\
+        ---
+        status: done
+        type: spec
+        date: 2026-05-24
+        summary: Listed
+        related:
+          prs: [42, 51]
+        ---
+
+        # Listed
+    """))
+
+    index = build_index(docs)
+    assert "prs: [42, 51]" in index

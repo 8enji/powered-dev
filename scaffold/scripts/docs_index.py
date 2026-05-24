@@ -64,12 +64,16 @@ def _fmt_entry(rec: dict[str, Any]) -> str:
     doc_type = fm.get("type", "")
     summary = fm.get("summary", "")
 
-    # Build related extras string
+    # Build related extras string. Render list values as [v1, v2] (no quotes).
     extras: list[str] = []
     related = fm.get("related")
     if isinstance(related, dict):
         for k, v in related.items():
-            extras.append(f"{k}: {v}")
+            if isinstance(v, list):
+                rendered = "[" + ", ".join(str(item) for item in v) + "]"
+                extras.append(f"{k}: {rendered}")
+            else:
+                extras.append(f"{k}: {v}")
     branch = fm.get("branch")
     if branch:
         extras.append(f"branch: {branch}")
