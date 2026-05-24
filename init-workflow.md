@@ -28,23 +28,27 @@ Bootstrap the powered-dev workflow into this project.
 
 ## Step 1 — Gather configuration
 
-Use `AskUserQuestion` for each. Collect all answers before proceeding.
+Make a **single** `AskUserQuestion` call with all three questions below — the tool accepts up to 4 questions per call, so batch into one round-trip rather than asking sequentially.
 
 1. **Project description** (1-2 sentences for CLAUDE.md `## What this is` section).
+   - Header: "Description"
    - Question: "Short project description (1-2 sentences)?"
-   - No default. Required.
+   - Options: **I'll type a description** / **Skip (fill in manually later)** — the user picks the first option and types the actual text via the "Other" affordance the tool always exposes for free-text input.
+   - Required.
 
 2. **Gate command** — the command that must pass before claiming a task is done. This is also wired into the pre-commit Claude hook.
+   - Header: "Gate command"
    - Question: "What command should pass before a task can be marked done? This typically chains lint + typecheck + test."
-   - Options: **`make all`** / **`npm run lint && npm test`** / **`ruff check . && pytest`** / Custom
+   - Options: **`make all`** / **`npm run lint && npm test`** / **`ruff check . && pytest`** — pick "Other" for a custom command.
    - Required.
 
 3. **Codex review** — whether to install the `/request-codex-review` slash command.
+   - Header: "Codex review"
    - Question: "Install Codex automated review (`/request-codex-review`)? Supports PR and local-change reviews. Requires Codex.app."
    - Options: **Yes** / **No**
    - Default: No.
 
-Store answers as `$PROJECT_DESCRIPTION`, `$GATE_CMD`, `$INSTALL_CODEX`.
+Store answers as `$PROJECT_DESCRIPTION`, `$GATE_CMD`, `$INSTALL_CODEX`. If the user picked **Skip** for project description, leave the `## What this is` section blank in the rendered CLAUDE.md.
 
 ## Step 2 — Fetch scaffold
 
