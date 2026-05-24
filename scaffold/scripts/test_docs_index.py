@@ -115,3 +115,50 @@ def test_lint_plan_with_branch_and_tier_passes(tmp_path):
     p.write_text("---\nstatus: active\ntype: plan\ndate: 2026-01-01\nsummary: X\nbranch: feature/x\ntier: lite\n---\n")
     errors, _ = lint([p])
     assert not any("plan missing" in e for e in errors)
+
+
+def test_lint_warns_on_done_plan_without_related_pr(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text(
+        "---\nstatus: done\ntype: plan\ndate: 2026-01-01\nsummary: X\n"
+        "branch: b\ntier: lite\n---\n"
+    )
+    _, warnings = lint([p])
+    assert any("related.pr" in w for w in warnings)
+
+
+def test_lint_silent_on_done_plan_with_related_pr(tmp_path):
+    p = tmp_path / "plan.md"
+    p.write_text(
+        "---\nstatus: done\ntype: plan\ndate: 2026-01-01\nsummary: X\n"
+        "branch: b\ntier: lite\nrelated:\n  pr: 42\n---\n"
+    )
+    _, warnings = lint([p])
+    assert warnings == []
+
+
+def test_lint_warns_on_done_spec_without_related_prs(tmp_path):
+    p = tmp_path / "spec.md"
+    p.write_text("---\nstatus: done\ntype: spec\ndate: 2026-01-01\nsummary: X\n---\n")
+    _, warnings = lint([p])
+    assert any("related.prs" in w for w in warnings)
+
+
+def test_lint_silent_on_done_spec_with_related_prs(tmp_path):
+    p = tmp_path / "spec.md"
+    p.write_text(
+        "---\nstatus: done\ntype: spec\ndate: 2026-01-01\nsummary: X\n"
+        "related:\n  prs: [42]\n---\n"
+    )
+    _, warnings = lint([p])
+    assert warnings == []
+
+
+def test_lint_warns_on_done_spec_with_empty_related_prs(tmp_path):
+    p = tmp_path / "spec.md"
+    p.write_text(
+        "---\nstatus: done\ntype: spec\ndate: 2026-01-01\nsummary: X\n"
+        "related:\n  prs: []\n---\n"
+    )
+    _, warnings = lint([p])
+    assert any("related.prs" in w for w in warnings)
