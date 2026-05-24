@@ -704,6 +704,62 @@ def test_setup_pr_worktree_creates_dir(tmp_path):
     assert (wt / "pr.py").exists()
 
 
+def test_setup_pr_worktree_recovers_from_externally_deleted_dir(tmp_path):
+    """Bug found via manual verification: if _clear_prior_dir wipes the worktree
+    directory externally, git's worktree registration is left dangling. The next
+    setup_pr_worktree call must recover (via worktree prune) rather than erroring
+    on `git worktree add`.
+
+    On macOS this also exercises the /tmp -> /private/tmp symlink resolution gap:
+    `git worktree list` shows the resolved path, so a naive string-compare against
+    the unresolved path used by callers won't catch the stale registration. This
+    test creates an unresolved-path symlink inside `tmp_path` so the regression
+    is exercised on any platform whose tempdir already resolves (e.g. pytest's
+    `tmp_path` on macOS is `/private/var/...`, the resolved form).
+    """
+    import os
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-b", "pr-source"], check=True)
+    (repo / "pr.py").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "pr.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "pr"], check=True)
+    pr_sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+
+    # Build an unresolved path by inserting a symlink hop in the middle. Callers
+    # pass paths like `/tmp/manual-verify/codex-review-pr-13/worktree` (where
+    # `/tmp` is symlinked on macOS); we mimic that with our own symlink so the
+    # original bug reproduces deterministically on any host.
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    link_root = tmp_path / "link-root"
+    os.symlink(real_root, link_root)
+    wt = link_root / "worktree"  # unresolved (link-root/...) — git stores real-root/...
+
+    setup_pr_worktree(repo, wt, pr_sha)
+    assert (wt / "pr.py").exists()
+
+    # Simulate `_clear_prior_dir`: externally wipe the worktree directory.
+    subprocess.run(["rm", "-rf", str(wt)], check=True)
+    assert not wt.exists()
+    # git's registration survives (and points at the resolved real-root path).
+    listing = subprocess.run(
+        ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert str(real_root / "worktree") in listing
+
+    # Second setup_pr_worktree call must recover, not error.
+    setup_pr_worktree(repo, wt, pr_sha)
+    assert (wt / "pr.py").exists()
+
+
 def test_collect_pr_touched_files(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

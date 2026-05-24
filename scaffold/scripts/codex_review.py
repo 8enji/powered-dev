@@ -494,8 +494,19 @@ def setup_pr_worktree(invoking_repo: Path, worktree_path: Path, pr_sha_or_ref: s
     Removes any prior worktree at this path first. Caller is responsible for cleanup.
     `pr_sha_or_ref` can be a refspec name (e.g. `refs/remotes/origin/pr-123-head`) or SHA.
     """
+    # Prune stale registrations first: `_clear_prior_dir` may have deleted the
+    # worktree directory externally, leaving git's registration dangling. On macOS
+    # `/tmp` resolves to `/private/tmp`, so a string-compare of the listing path
+    # against `worktree_path` wouldn't catch it. Pruning sidesteps both issues.
+    subprocess.run(
+        ["git", "-C", str(invoking_repo), "worktree", "prune"],
+        capture_output=True,
+    )
+
+    # If the directory still exists and git knows about it, force-remove via git.
     listing = _run_git(invoking_repo, ["worktree", "list", "--porcelain"])
-    if f"worktree {worktree_path}" in listing:
+    resolved = str(worktree_path.resolve()) if worktree_path.exists() else str(worktree_path)
+    if (f"worktree {worktree_path}" in listing) or (f"worktree {resolved}" in listing):
         subprocess.run(
             ["git", "-C", str(invoking_repo), "worktree", "remove", "--force", str(worktree_path)],
             capture_output=True,
@@ -511,6 +522,12 @@ def setup_pr_worktree(invoking_repo: Path, worktree_path: Path, pr_sha_or_ref: s
 
 def cleanup_pr_worktree(invoking_repo: Path, worktree_path: Path) -> None:
     """Remove the worktree if it exists. Best-effort: failures are swallowed."""
+    # Prune first so any dangling registration (directory deleted externally) is
+    # cleared even if `worktree_path.exists()` returns False.
+    subprocess.run(
+        ["git", "-C", str(invoking_repo), "worktree", "prune"],
+        capture_output=True,
+    )
     if not worktree_path.exists():
         return
     subprocess.run(
