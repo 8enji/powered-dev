@@ -22,12 +22,14 @@ Work is tracked by one human-edited backlog plus YAML frontmatter on generated d
 
 ### `/task-start`
 
-Picks a backlog item and runs `board.py start`, which:
+Picks a backlog item — or accepts an ad hoc title — and runs `board.py start`, which:
 
-1. Removes the entry from `backlog.md`.
+1. Removes the entry from `backlog.md` (skipped for ad hoc tasks).
 2. Creates a plan stub in `docs/superpowers/plans/` with `status: active` and `branch: <current-branch>`.
 3. For **full** tier tasks, also creates a spec stub in `docs/superpowers/specs/`.
 4. Regenerates `docs/superpowers/INDEX.md`.
+
+Pass a title (`/task-start "Fix login bug"`) to start an ad hoc task without a backlog entry. With no arg, the command falls back to a backlog picker, or prompts for an ad hoc title when the backlog is empty.
 
 If the superpowers plugin is installed, it then chains into brainstorming (full tier) or plan writing (lite tier).
 
@@ -61,7 +63,6 @@ A shell script at `scripts/githooks/pre-commit` that runs on every `git commit`:
 - Regenerates `INDEX.md`, catching drift.
 - Lints backlog for duplicate titles.
 - Lints YAML frontmatter on staged doc files.
-- Enforces `CLAUDE.md` line budget.
 
 ### Ring 3: GitHub Actions
 

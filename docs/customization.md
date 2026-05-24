@@ -21,18 +21,6 @@ cargo clippy && cargo test         # Rust
 go vet ./... && go test ./...      # Go
 ```
 
-## CLAUDE.md line budget
-
-The pre-commit hook enforces a line budget on `CLAUDE.md` (default: 50 lines). This keeps the file focused — CLAUDE.md should be a concise reference, not a novel.
-
-Override with an environment variable:
-
-```bash
-export POWERED_DEV_CLAUDE_MD_MAX_LINES=80
-```
-
-Or set it in your shell profile to make it permanent.
-
 ## Task tiers
 
 `/task-start` asks for a tier:
@@ -154,3 +142,5 @@ Reports show UTC instead of user's local timezone.
 ```
 
 Titles must be unique (enforced by the pre-commit hook).
+
+You don't have to put every task in the backlog. Pass a title directly with `/task-start "Title"` and the command scaffolds the spec/plan stubs without requiring a backlog entry — useful for one-off fixes or projects that don't maintain a backlog.

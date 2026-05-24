@@ -51,6 +51,14 @@ def test_finish_hands_off_cleanly_to_ship():
     assert "continue to `/task-ship`" in finish
 
 
+def test_start_defers_commit_to_ship():
+    start = _read(".claude/commands/task-start.md")
+
+    assert "/task-ship" in start
+    assert "implementation commit" in start
+    assert "Leave it staged by default" in start
+
+
 def test_ship_keeps_codex_review_as_separate_optional_command():
     ship = _read(".claude/commands/task-ship.md")
 
