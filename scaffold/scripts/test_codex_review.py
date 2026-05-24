@@ -244,3 +244,55 @@ def test_histogram_missing_severities_show_zero():
 
 def test_histogram_empty_findings():
     assert severity_histogram([]) == "0 critical · 0 major · 0 minor · 0 nit"
+
+
+from codex_review import render_local_report
+
+
+def test_render_local_report_includes_frontmatter_and_summary():
+    report = render_local_report(
+        review_id="20260524T120000Z-abc1234",
+        event="COMMENT",
+        dropped=0,
+        summary="Found two minor issues.",
+        findings=[],
+        date="2026-05-24",
+    )
+    assert report.startswith("---\n")
+    assert "status: done" in report
+    assert "type: report" in report
+    assert "date: 2026-05-24" in report
+    assert "summary: Codex local review for 20260524T120000Z-abc1234" in report
+    assert "# Codex local review 20260524T120000Z-abc1234" in report
+    assert "**Event:** COMMENT" in report
+    assert "Found two minor issues." in report
+
+
+def test_render_local_report_with_findings():
+    findings = [
+        {"path": "a.py", "line": 10, "side": "RIGHT", "severity": "major", "body": "bug here"},
+    ]
+    report = render_local_report(
+        review_id="rid",
+        event="REQUEST_CHANGES",
+        dropped=0,
+        summary="One major.",
+        findings=findings,
+        date="2026-05-24",
+    )
+    assert "**Event:** REQUEST_CHANGES" in report
+    assert "**Findings:** 0 critical · 1 major · 0 minor · 0 nit" in report
+    assert "## [major] a.py:10" in report
+    assert "bug here" in report
+
+
+def test_render_local_report_notes_dropped_findings():
+    report = render_local_report(
+        review_id="rid",
+        event="COMMENT",
+        dropped=3,
+        summary="x",
+        findings=[],
+        date="2026-05-24",
+    )
+    assert "3 finding(s) referenced files outside the local diff and were dropped" in report

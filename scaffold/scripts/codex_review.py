@@ -161,3 +161,45 @@ def severity_histogram(findings: list[dict]) -> str:
         f"{counts['critical']} critical · {counts['major']} major · "
         f"{counts['minor']} minor · {counts['nit']} nit"
     )
+
+
+def render_local_report(
+    *,
+    review_id: str,
+    event: str,
+    dropped: int,
+    summary: str,
+    findings: list[dict],
+    date: str,
+) -> str:
+    """Render the local-mode markdown report (with frontmatter)."""
+    histo = severity_histogram(findings)
+    lines = [
+        "---",
+        "status: done",
+        "type: report",
+        f"date: {date}",
+        f"summary: Codex local review for {review_id}",
+        "---",
+        "",
+        f"# Codex local review {review_id}",
+        "",
+        f"**Event:** {event}",
+        "",
+        f"**Findings:** {histo}",
+        "",
+        summary,
+        "",
+    ]
+    if dropped > 0:
+        lines.append(
+            f"_Note: {dropped} finding(s) referenced files outside the local diff "
+            "and were dropped._"
+        )
+        lines.append("")
+    for f in findings:
+        lines.append(f"## [{f['severity']}] {f['path']}:{f['line']}")
+        lines.append("")
+        lines.append(f["body"])
+        lines.append("")
+    return "\n".join(lines) + "\n"
