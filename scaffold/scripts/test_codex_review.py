@@ -296,3 +296,59 @@ def test_render_local_report_notes_dropped_findings():
         date="2026-05-24",
     )
     assert "3 finding(s) referenced files outside the local diff and were dropped" in report
+
+
+from codex_review import render_pr_review_body, build_review_comments
+
+
+def test_pr_review_body_includes_summary_and_histogram():
+    body = render_pr_review_body(
+        model="gpt-5",
+        reasoning="high",
+        summary="Two issues found.",
+        histogram="0 critical · 1 major · 1 minor · 0 nit",
+        dropped=0,
+    )
+    assert "## Codex review" in body
+    assert "Model: gpt-5, Reasoning: high" in body
+    assert "Two issues found." in body
+    assert "**Findings:** 0 critical · 1 major · 1 minor · 0 nit" in body
+    assert "dropped" not in body
+
+
+def test_pr_review_body_notes_dropped():
+    body = render_pr_review_body(
+        model="gpt-5",
+        reasoning="high",
+        summary="x",
+        histogram="0 critical · 0 major · 0 minor · 0 nit",
+        dropped=2,
+    )
+    assert "2 finding(s) referenced files outside the diff and were dropped" in body
+
+
+def test_pr_review_body_default_model_strings():
+    body = render_pr_review_body(
+        model="default",
+        reasoning="default",
+        summary="x",
+        histogram="0 critical · 0 major · 0 minor · 0 nit",
+        dropped=0,
+    )
+    assert "Model: default, Reasoning: default" in body
+
+
+def test_build_review_comments_shape():
+    findings = [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "major", "body": "bug"},
+        {"path": "b.py", "line": 5, "side": "LEFT", "severity": "nit", "body": "style"},
+    ]
+    comments = build_review_comments(findings)
+    assert comments == [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "body": "**[major]** bug"},
+        {"path": "b.py", "line": 5, "side": "LEFT", "body": "**[nit]** style"},
+    ]
+
+
+def test_build_review_comments_empty():
+    assert build_review_comments([]) == []
