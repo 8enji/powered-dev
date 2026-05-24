@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=$(jq -r '.tool_input.command // empty'); case \"$CMD\" in *\"git commit\"*|*\"git merge\"*) ;; *) exit 0 ;; esac; cd \"${CLAUDE_PROJECT_DIR:-$(pwd)}\" && __GATE_CMD__ 1>&2 || exit 2",
+            "command": "CMD=$(jq -r '.tool_input.command // empty'); case \"$CMD\" in *\"git commit\"*|*\"git merge\"*) ;; *) exit 0 ;; esac; cd \"${CLAUDE_PROJECT_DIR:-$(pwd)}\"; case \"$CMD\" in *\"git commit\"*) git diff --cached --quiet -- ':!docs/board' ':!docs/superpowers' && exit 0 ;; esac; __GATE_CMD__ 1>&2 || exit 2",
             "if": "Bash(git *)",
             "timeout": 120,
             "statusMessage": "Pre-commit gate: lint + typecheck"
