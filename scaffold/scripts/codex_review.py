@@ -174,6 +174,19 @@ def severity_histogram(findings: list[dict]) -> str:
     )
 
 
+def format_findings_line(findings: list[dict] | None) -> str:
+    """One-line summary used as the final stdout of `finish`.
+
+    The slash command parses this to decide whether to prompt the user about
+    `/systematic-debugging`: `No findings.` means skip; anything else means ask.
+    """
+    if findings is None:
+        return "Findings: unparseable (codex output did not match schema; raw output saved)."
+    if not findings:
+        return "No findings."
+    return f"Findings: {severity_histogram(findings)}"
+
+
 def render_local_report(
     *,
     review_id: str,
@@ -783,6 +796,8 @@ def _finish_local(state: dict, review_dir: Path, *, today: str) -> int:
         )
         report_path.write_text(body, encoding="utf-8")
         _run_docs_index_and_stage(repo, report_path)
+        print(f"Wrote Codex local review report: {report_path}")
+        print(format_findings_line(None))
         return 0
 
     touched = [
@@ -803,6 +818,7 @@ def _finish_local(state: dict, review_dir: Path, *, today: str) -> int:
     (review_dir / "event").write_text(event + "\n", encoding="utf-8")
     _run_docs_index_and_stage(repo, report_path)
     print(f"Wrote Codex local review report: {report_path}")
+    print(format_findings_line(kept))
     return 0
 
 
@@ -892,6 +908,7 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
             )
         if worktree_path:
             cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+        print(format_findings_line(None))
         return 0
 
     touched = [
@@ -927,6 +944,7 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
         except json.JSONDecodeError:
             url = ""
         print(f"Posted Codex review ({event}) on PR #{state['pr']}: {url}")
+        print(format_findings_line(kept))
         if worktree_path:
             cleanup_pr_worktree(invoking_repo, Path(worktree_path))
         return 0
@@ -949,6 +967,7 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
                 f"Posted Codex review ({event}, body-only after inline validation failure) "
                 f"on PR #{state['pr']}: {url}"
             )
+            print(format_findings_line(kept))
             if worktree_path:
                 cleanup_pr_worktree(invoking_repo, Path(worktree_path))
             return 0
