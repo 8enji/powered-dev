@@ -7,6 +7,7 @@ import board
 from board import (
     check_branch_active,
     lint_backlog,
+    parse_merge_branches,
 )
 
 
@@ -687,3 +688,170 @@ def test_set_pr_defaults_branch_to_current(tmp_path):
         board._cmd_set_pr(pr=42, branch=None)
 
     assert "  pr: 42" in plan.read_text()
+
+
+# ---------------------------------------------------------------------------
+# parse_merge_branches — replaces fragile `awk '{print $NF}'` extraction
+# ---------------------------------------------------------------------------
+
+
+def test_parse_merge_branches_simple():
+    assert parse_merge_branches("git merge feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_no_ff():
+    assert parse_merge_branches("git merge --no-ff feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_quoted_message_after_branch():
+    # Regression: awk version returned `things"` here.
+    assert parse_merge_branches('git merge feature/foo -m "fix things"') == ["feature/foo"]
+
+
+def test_parse_merge_branches_quoted_message_before_branch():
+    assert parse_merge_branches('git merge -m "fix things" feature/foo') == ["feature/foo"]
+
+
+def test_parse_merge_branches_octopus():
+    # Regression: awk version silently dropped feature/foo.
+    assert parse_merge_branches("git merge feature/foo feature/bar") == [
+        "feature/foo", "feature/bar",
+    ]
+
+
+def test_parse_merge_branches_origin_prefix_stripped():
+    assert parse_merge_branches("git merge origin/feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_bare_merge():
+    assert parse_merge_branches("git merge") == []
+
+
+def test_parse_merge_branches_global_git_flag():
+    assert parse_merge_branches("git -c color.ui=false merge feature/foo") == [
+        "feature/foo",
+    ]
+
+
+def test_parse_merge_branches_equals_form_flag():
+    assert parse_merge_branches("git merge --strategy=ours feature/foo") == [
+        "feature/foo",
+    ]
+
+
+def test_parse_merge_branches_short_flag_with_value():
+    assert parse_merge_branches("git merge -s ours feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_double_dash_separator():
+    assert parse_merge_branches("git merge -- --weird-branch") == ["--weird-branch"]
+
+
+def test_parse_merge_branches_signed_default_key():
+    # `-S` takes an OPTIONAL value; bare `-S branch` means "sign with default
+    # key, merge branch". Regression: parser used to eat `feature/foo` as keyid.
+    assert parse_merge_branches("git merge -S feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_gpg_sign_long_default_key():
+    assert parse_merge_branches("git merge --gpg-sign feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_gpg_sign_equals_keyid():
+    assert parse_merge_branches("git merge --gpg-sign=KEY feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_signed_keyid_attached():
+    # `-SKEYID` (no space) is a single token that doesn't match `-S` exactly,
+    # so it falls through as a standalone flag.
+    assert parse_merge_branches("git merge -SKEYID feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_squash():
+    # Boolean flag — falls through `t.startswith('-')` with i += 1.
+    assert parse_merge_branches("git merge --squash feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_abort_returns_empty():
+    # No positional branch arg; hook then fail-opens (nothing to gate).
+    assert parse_merge_branches("git merge --abort") == []
+
+
+def test_parse_merge_branches_continue_returns_empty():
+    assert parse_merge_branches("git merge --continue") == []
+
+
+def test_parse_merge_branches_keeps_dollar_var_literal():
+    # shlex.split doesn't expand $VAR; parser stays pure and returns the
+    # literal token. The CLI gate handles the fail-open with a stderr warning.
+    assert parse_merge_branches("git merge $BRANCH") == ["$BRANCH"]
+
+
+def test_parse_merge_branches_malformed_quotes():
+    # Unclosed quote → shlex raises → return [] (let git surface the real error).
+    assert parse_merge_branches('git merge feature/foo -m "unclosed') == []
+
+
+def test_parse_merge_branches_not_a_merge():
+    assert parse_merge_branches("git status") == []
+
+
+def test_check_merge_cmd_blocks_when_any_branch_active(tmp_path, capsys):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/bar")
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge feature/foo feature/bar")
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "feature/bar" in captured.out
+
+
+def test_check_merge_cmd_passes_when_no_active(tmp_path):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    plans.mkdir(parents=True)
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd('git merge feature/foo -m "msg"')
+    assert exc.value.code == 0
+
+
+def test_check_merge_cmd_passes_on_bare_merge(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge")
+    assert exc.value.code == 0
+
+
+def test_check_merge_cmd_warns_and_passes_on_dollar_var(tmp_path, capsys):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/wip")
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge $BRANCH")
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "shell expansion" in captured.err
+    assert "$BRANCH" in captured.err
+
+
+def test_check_merge_cmd_warns_on_command_substitution(tmp_path, capsys):
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge $(git symbolic-ref --short HEAD)")
+    assert exc.value.code == 0
+    assert "shell expansion" in capsys.readouterr().err
+
+
+def test_main_dispatches_check_merge_cmd(tmp_path, capsys):
+    """Regression: argparse dest name collision once silently swallowed dispatch."""
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/wip")
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board.main(["check-merge-cmd", 'git merge feature/wip -m "msg"'])
+    assert exc.value.code == 1
+    assert "feature/wip" in capsys.readouterr().out
