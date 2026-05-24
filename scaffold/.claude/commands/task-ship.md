@@ -100,14 +100,15 @@ Ship the current branch.
 
 ## 3. Watch CI in the background
 
-1. Initialize state: `python3 scripts/ship_ci.py start --pr "$PR"`.
-2. Dispatch the watch via the `Bash` tool with `run_in_background: true`:
+1. Pre-flight: confirm the PR isn't in a state that prevents CI from running. `MERGE_STATE=$(gh pr view "$PR" --json mergeStateStatus --jq '.mergeStateStatus')`. If `$MERGE_STATE` is `DIRTY`, stop and tell the user: "PR #$PR has merge conflicts (mergeStateStatus=DIRTY); CI workflows that depend on the merge ref won't run and the PR can't be merged. Resolve conflicts on the branch, then rerun /task-ship." Do not initialize the watcher.
+2. Initialize state: `python3 scripts/ship_ci.py start --pr "$PR"`.
+3. Dispatch the watch via the `Bash` tool with `run_in_background: true`:
 
    ```bash
    gh pr checks "$PR" --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status
    ```
 
-3. End the turn. The harness notifies when the background process exits.
+4. End the turn. The harness notifies when the background process exits.
 
 **On wake:**
 
@@ -153,6 +154,7 @@ For `ask-non-required` follow-up:
 ## Edge cases
 
 - PR already merged/closed — handled in section 2.
+- PR has merge conflicts (`mergeStateStatus=DIRTY`) — short-circuited in section 3 step 1 before the watcher starts.
 - Background watch never exits — re-run `gh pr checks` foreground on re-engage.
 - No required checks configured — section 3 step 3 disambiguates.
 - Timing race (no checks yet) — retry with pre-sleep, max 5.
