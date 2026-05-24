@@ -455,6 +455,56 @@ def _cmd_abandon() -> None:
     _finish_or_abandon("abandoned")
 
 
+def _cmd_set_pr(pr: int, branch: str) -> None:
+    """Backfill a PR number onto the done plan for `branch` and its linked spec.
+
+    - Requires pr > 0.
+    - Requires exactly one done plan on the branch.
+    - Writes related.pr on the plan.
+    - For full tier, appends to related.prs on the linked spec (if it exists on disk).
+    - Regenerates INDEX.md and stages the touched files.
+    """
+    if pr <= 0:
+        print(f"ERROR: --pr must be a positive integer, got {pr}.")
+        sys.exit(1)
+
+    matches = _find_done_plans_for_branch(branch)
+    if not matches:
+        print(f"ERROR: No done plan found for branch '{branch}'.")
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"ERROR: Multiple done plans on branch '{branch}' — refusing to ambiguously assign PR.")
+        for path, _ in matches:
+            print(f"  - {path.name}")
+        sys.exit(1)
+
+    plan_path, fm = matches[0]
+    touched: list[Path] = []
+
+    _set_related_scalar(plan_path, "pr", pr)
+    print(f"Updated {plan_path.name}: related.pr -> {pr}")
+    touched.append(plan_path)
+
+    tier = fm.get("tier", "lite")
+    if tier == "full":
+        related = fm.get("related")
+        if isinstance(related, dict) and "spec" in related:
+            spec_name = related["spec"]
+            spec_path = SPECS_ROOT / spec_name
+            if spec_path.exists():
+                _append_related_list(spec_path, "prs", pr)
+                print(f"Updated {spec_path.name}: appended {pr} to related.prs")
+                touched.append(spec_path)
+            else:
+                print(f"Skipping spec {spec_name} — file does not exist.")
+
+    _regen_index()
+    touched.append(INDEX_PATH)
+
+    _git_add(touched)
+    print(f"Done. Run `git commit` to finalize.")
+
+
 def _cmd_start(title: str, tier: str) -> None:
     """Start a task: scaffold plan stub (+ spec stub for full tier),
     remove from backlog if the title matches an entry, regenerate index,
@@ -567,6 +617,13 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("finish", help="Mark active plan as done")
     sub.add_parser("abandon", help="Mark active plan as abandoned")
 
+    set_pr_p = sub.add_parser(
+        "set-pr",
+        help="Backfill a PR number onto the done plan for a branch (and its spec)",
+    )
+    set_pr_p.add_argument("--pr", type=int, required=True, help="GitHub PR number (positive int)")
+    set_pr_p.add_argument("--branch", required=True, help="Branch name whose done plan to update")
+
     check_merge_p = sub.add_parser("check-merge", help="Gate for git merge")
     check_merge_p.add_argument("branch", help="Branch name to check")
 
@@ -583,6 +640,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_finish()
     elif args.command == "abandon":
         _cmd_abandon()
+    elif args.command == "set-pr":
+        _cmd_set_pr(args.pr, args.branch)
     elif args.command == "check-merge":
         _cmd_check_merge(args.branch)
     elif args.command == "check-pr":
