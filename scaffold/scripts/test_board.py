@@ -665,3 +665,25 @@ def test_set_pr_errors_to_stderr_not_stdout(capsys):
     captured = capsys.readouterr()
     assert "must be a positive integer" in captured.err
     assert "ERROR" not in captured.out
+
+
+def test_set_pr_defaults_branch_to_current(tmp_path):
+    """When branch=None, _cmd_set_pr falls back to the current git branch."""
+    docs = tmp_path / "docs" / "superpowers"
+    plans = docs / "plans"
+    specs = docs / "specs"
+    index = docs / "INDEX.md"
+    specs.mkdir(parents=True)
+    plan = _make_plan(plans, "Done Default", "done", "feature/x", tier="lite")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "SPECS_ROOT", specs),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_current_branch", return_value="feature/x"),
+        mock.patch.object(board, "_git_add"),
+    ):
+        board._cmd_set_pr(pr=42, branch=None)
+
+    assert "  pr: 42" in plan.read_text()

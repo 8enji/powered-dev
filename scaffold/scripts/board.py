@@ -10,7 +10,7 @@ Usage:
     python board.py start "Task title" [--tier lite|full]
     python board.py finish
     python board.py abandon
-    python board.py set-pr --pr <int> --branch <branch>
+    python board.py set-pr --pr <int> [--branch <branch>]
     python board.py check-merge <branch>
     python board.py check-pr <branch>
 """
@@ -456,10 +456,11 @@ def _cmd_abandon() -> None:
     _finish_or_abandon("abandoned")
 
 
-def _cmd_set_pr(pr: int, branch: str) -> None:
+def _cmd_set_pr(pr: int, branch: str | None) -> None:
     """Backfill a PR number onto the done plan for `branch` and its linked spec.
 
     - Requires pr > 0.
+    - If branch is None, falls back to the current git branch.
     - Requires exactly one done plan on the branch.
     - Writes related.pr on the plan.
     - For full tier, appends to related.prs on the linked spec (if it exists on disk).
@@ -468,6 +469,9 @@ def _cmd_set_pr(pr: int, branch: str) -> None:
     if pr <= 0:
         print(f"ERROR: --pr must be a positive integer, got {pr}.", file=sys.stderr)
         sys.exit(1)
+
+    if branch is None:
+        branch = _current_branch()
 
     matches = _find_done_plans_for_branch(branch)
     if not matches:
@@ -623,7 +627,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Backfill a PR number onto the done plan for a branch (and its spec)",
     )
     set_pr_p.add_argument("--pr", type=int, required=True, help="GitHub PR number (positive int)")
-    set_pr_p.add_argument("--branch", required=True, help="Branch name whose done plan to update")
+    set_pr_p.add_argument(
+        "--branch",
+        default=None,
+        help="Branch name whose done plan to update (default: current branch)",
+    )
 
     check_merge_p = sub.add_parser("check-merge", help="Gate for git merge")
     check_merge_p.add_argument("branch", help="Branch name to check")
