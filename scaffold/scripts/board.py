@@ -12,6 +12,7 @@ Usage:
     python board.py abandon
     python board.py set-pr --pr <int> [--branch <branch>]
     python board.py check-merge <branch>
+    python board.py check-merge-cmd <command-line>
     python board.py check-pr <branch>
 """
 
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -271,6 +273,68 @@ def _cmd_check_merge(branch: str) -> None:
     rc, msg = check_branch_active(branch)
     print(msg)
     sys.exit(rc)
+
+
+# git merge flags that take a value as a separate token.
+# `--foo=bar` form is detected separately and doesn't need to be listed here.
+_MERGE_FLAGS_WITH_VALUE = frozenset({
+    "-m", "--message",
+    "-F", "--file",
+    "-S", "--gpg-sign",
+    "-s", "--strategy",
+    "-X", "--strategy-option",
+    "--into-name",
+})
+
+
+def parse_merge_branches(command: str) -> list[str]:
+    """Extract source branch names from a `git merge ...` command line.
+
+    Uses shell-aware tokenization so quoted flag values (e.g. `-m "fix things"`)
+    don't get misclassified as branches. Returns positional args in order with
+    any `origin/` prefix stripped to match plan branch names. Returns [] if the
+    command is malformed or has no positional branch args.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return []
+    try:
+        i = tokens.index("merge") + 1
+    except ValueError:
+        return []
+    out: list[str] = []
+    while i < len(tokens):
+        t = tokens[i]
+        if t == "--":
+            out.extend(tokens[i + 1:])
+            break
+        if t.startswith("-"):
+            if "=" in t:
+                i += 1
+            elif t in _MERGE_FLAGS_WITH_VALUE:
+                i += 2
+            else:
+                i += 1
+            continue
+        out.append(t)
+        i += 1
+    return [b.removeprefix("origin/") for b in out]
+
+
+def _cmd_check_merge_cmd(command: str) -> None:
+    """Gate a full `git merge ...` command line. Exits 1 if any source branch
+    has an active plan. Supports `-m "msg"`, octopus merges, and `origin/` refs.
+    """
+    branches = parse_merge_branches(command)
+    if not branches:
+        sys.exit(0)
+    for branch in branches:
+        rc, msg = check_branch_active(branch)
+        if rc != 0:
+            print(msg)
+            sys.exit(1)
+    sys.exit(0)
 
 
 def _cmd_check_pr(branch: str) -> None:
@@ -636,6 +700,16 @@ def main(argv: list[str] | None = None) -> None:
     check_merge_p = sub.add_parser("check-merge", help="Gate for git merge")
     check_merge_p.add_argument("branch", help="Branch name to check")
 
+    check_merge_cmd_p = sub.add_parser(
+        "check-merge-cmd",
+        help="Gate that parses a full `git merge ...` command line",
+    )
+    # NB: dest must not be "command" — that name is already used by the
+    # subparsers dest above, and argparse silently lets the positional clobber it.
+    check_merge_cmd_p.add_argument(
+        "command_line", help="The full command line to parse",
+    )
+
     check_pr_p = sub.add_parser("check-pr", help="Gate for GitHub Actions PR check")
     check_pr_p.add_argument("branch", help="Branch name to check")
 
@@ -653,6 +727,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_set_pr(args.pr, args.branch)
     elif args.command == "check-merge":
         _cmd_check_merge(args.branch)
+    elif args.command == "check-merge-cmd":
+        _cmd_check_merge_cmd(args.command_line)
     elif args.command == "check-pr":
         _cmd_check_pr(args.branch)
 

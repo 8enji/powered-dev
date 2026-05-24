@@ -7,6 +7,7 @@ import board
 from board import (
     check_branch_active,
     lint_backlog,
+    parse_merge_branches,
 )
 
 
@@ -687,3 +688,110 @@ def test_set_pr_defaults_branch_to_current(tmp_path):
         board._cmd_set_pr(pr=42, branch=None)
 
     assert "  pr: 42" in plan.read_text()
+
+
+# ---------------------------------------------------------------------------
+# parse_merge_branches — replaces fragile `awk '{print $NF}'` extraction
+# ---------------------------------------------------------------------------
+
+
+def test_parse_merge_branches_simple():
+    assert parse_merge_branches("git merge feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_no_ff():
+    assert parse_merge_branches("git merge --no-ff feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_quoted_message_after_branch():
+    # Regression: awk version returned `things"` here.
+    assert parse_merge_branches('git merge feature/foo -m "fix things"') == ["feature/foo"]
+
+
+def test_parse_merge_branches_quoted_message_before_branch():
+    assert parse_merge_branches('git merge -m "fix things" feature/foo') == ["feature/foo"]
+
+
+def test_parse_merge_branches_octopus():
+    # Regression: awk version silently dropped feature/foo.
+    assert parse_merge_branches("git merge feature/foo feature/bar") == [
+        "feature/foo", "feature/bar",
+    ]
+
+
+def test_parse_merge_branches_origin_prefix_stripped():
+    assert parse_merge_branches("git merge origin/feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_bare_merge():
+    assert parse_merge_branches("git merge") == []
+
+
+def test_parse_merge_branches_global_git_flag():
+    assert parse_merge_branches("git -c color.ui=false merge feature/foo") == [
+        "feature/foo",
+    ]
+
+
+def test_parse_merge_branches_equals_form_flag():
+    assert parse_merge_branches("git merge --strategy=ours feature/foo") == [
+        "feature/foo",
+    ]
+
+
+def test_parse_merge_branches_short_flag_with_value():
+    assert parse_merge_branches("git merge -s ours feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_double_dash_separator():
+    assert parse_merge_branches("git merge -- --weird-branch") == ["--weird-branch"]
+
+
+def test_parse_merge_branches_malformed_quotes():
+    # Unclosed quote → shlex raises → return [] (let git surface the real error).
+    assert parse_merge_branches('git merge feature/foo -m "unclosed') == []
+
+
+def test_parse_merge_branches_not_a_merge():
+    assert parse_merge_branches("git status") == []
+
+
+def test_check_merge_cmd_blocks_when_any_branch_active(tmp_path, capsys):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/bar")
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge feature/foo feature/bar")
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "feature/bar" in captured.out
+
+
+def test_check_merge_cmd_passes_when_no_active(tmp_path):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    plans.mkdir(parents=True)
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd('git merge feature/foo -m "msg"')
+    assert exc.value.code == 0
+
+
+def test_check_merge_cmd_passes_on_bare_merge(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge")
+    assert exc.value.code == 0
+
+
+def test_main_dispatches_check_merge_cmd(tmp_path, capsys):
+    """Regression: argparse dest name collision once silently swallowed dispatch."""
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/wip")
+
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board.main(["check-merge-cmd", 'git merge feature/wip -m "msg"'])
+    assert exc.value.code == 1
+    assert "feature/wip" in capsys.readouterr().out
