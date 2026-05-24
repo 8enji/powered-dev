@@ -68,6 +68,53 @@ def _bump_retries(pr: int) -> int:
     return new
 
 
+_PASSING_STATES = frozenset({"SUCCESS", "NEUTRAL", "SKIPPED", "STALE"})
+_FAILING_STATES = frozenset({
+    "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT",
+    "ACTION_REQUIRED", "STARTUP_FAILURE",
+})
+
+
+def _classify_checks(checks: list[dict]) -> str:
+    """Coarse-grain a list of check dicts into 'empty' / 'failing' / 'pending' / 'passing'.
+
+    Unknown states are conservatively treated as pending so we don't declare
+    green-light on a state we haven't seen before.
+    """
+    if not checks:
+        return "empty"
+    has_failure = False
+    has_pending = False
+    for c in checks:
+        state = c.get("state", "")
+        if state in _FAILING_STATES:
+            has_failure = True
+        elif state not in _PASSING_STATES:
+            has_pending = True
+    if has_failure:
+        return "failing"
+    if has_pending:
+        return "pending"
+    return "passing"
+
+
+def _gh_checks_json(pr: int, required_only: bool) -> list[dict]:
+    """Call `gh pr checks <pr> [--required] --json name,state`. Return [] on any failure."""
+    cmd = ["gh", "pr", "checks", str(pr), "--json", "name,state"]
+    if required_only:
+        cmd.append("--required")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if not result.stdout.strip():
+        return []
+    try:
+        parsed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return parsed
+
+
 def _wipe_state(pr: int) -> None:
     for path in (_status_path(pr), _retries_path(pr), _all_mode_marker_path(pr)):
         path.unlink(missing_ok=True)

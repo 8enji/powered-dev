@@ -76,3 +76,96 @@ def test_bump_retries_increments_and_returns_new(tmp_path: Path) -> None:
         assert ship_ci._bump_retries(pr=123) == 1
         assert ship_ci._bump_retries(pr=123) == 2
         assert (tmp_path / "ship-123.retries").read_text().strip() == "2"
+
+
+def test_classify_checks_empty_list() -> None:
+    assert ship_ci._classify_checks([]) == "empty"
+
+
+def test_classify_checks_all_passing() -> None:
+    checks = [
+        {"name": "lint", "state": "SUCCESS"},
+        {"name": "test", "state": "SUCCESS"},
+        {"name": "type", "state": "NEUTRAL"},
+    ]
+    assert ship_ci._classify_checks(checks) == "passing"
+
+
+def test_classify_checks_any_failing() -> None:
+    checks = [
+        {"name": "lint", "state": "SUCCESS"},
+        {"name": "test", "state": "FAILURE"},
+    ]
+    assert ship_ci._classify_checks(checks) == "failing"
+
+
+def test_classify_checks_any_pending() -> None:
+    checks = [
+        {"name": "lint", "state": "SUCCESS"},
+        {"name": "test", "state": "IN_PROGRESS"},
+    ]
+    assert ship_ci._classify_checks(checks) == "pending"
+
+
+def test_classify_checks_failing_beats_pending() -> None:
+    checks = [
+        {"name": "lint", "state": "FAILURE"},
+        {"name": "test", "state": "IN_PROGRESS"},
+    ]
+    assert ship_ci._classify_checks(checks) == "failing"
+
+
+def test_classify_checks_treats_skipped_and_stale_as_passing() -> None:
+    checks = [
+        {"name": "a", "state": "SKIPPED"},
+        {"name": "b", "state": "STALE"},
+        {"name": "c", "state": "SUCCESS"},
+    ]
+    assert ship_ci._classify_checks(checks) == "passing"
+
+
+def test_classify_checks_treats_unknown_state_as_pending() -> None:
+    checks = [{"name": "weird", "state": "SOMETHING_NEW"}]
+    assert ship_ci._classify_checks(checks) == "pending"
+
+
+def test_gh_checks_json_required_includes_required_flag() -> None:
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.return_value = mock.Mock(returncode=0, stdout='[]', stderr="")
+        ship_ci._gh_checks_json(pr=123, required_only=True)
+    cmd = run.call_args[0][0]
+    assert "--required" in cmd
+    assert "--json" in cmd
+    assert "name,state" in cmd
+    assert "123" in cmd
+
+
+def test_gh_checks_json_all_omits_required_flag() -> None:
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.return_value = mock.Mock(returncode=0, stdout='[]', stderr="")
+        ship_ci._gh_checks_json(pr=123, required_only=False)
+    cmd = run.call_args[0][0]
+    assert "--required" not in cmd
+
+
+def test_gh_checks_json_parses_array() -> None:
+    payload = '[{"name":"lint","state":"SUCCESS"}]'
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.return_value = mock.Mock(returncode=0, stdout=payload, stderr="")
+        result = ship_ci._gh_checks_json(pr=123, required_only=True)
+    assert result == [{"name": "lint", "state": "SUCCESS"}]
+
+
+def test_gh_checks_json_returns_empty_on_no_checks_exit_code() -> None:
+    # gh exits non-zero with empty stdout when no checks exist at all
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.return_value = mock.Mock(returncode=1, stdout="", stderr="no checks reported")
+        result = ship_ci._gh_checks_json(pr=123, required_only=True)
+    assert result == []
+
+
+def test_gh_checks_json_returns_empty_on_malformed_json() -> None:
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.return_value = mock.Mock(returncode=0, stdout="not json", stderr="")
+        result = ship_ci._gh_checks_json(pr=123, required_only=True)
+    assert result == []
