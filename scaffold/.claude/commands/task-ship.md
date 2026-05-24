@@ -84,7 +84,7 @@ Ship the current branch.
       python3 scripts/board.py set-pr --pr "$PR" --branch "$BRANCH" 2>/dev/null
       ```
       Capture the exit code. If non-zero, skip the rest of step 6.
-   2. If the backfill succeeded, check `git status --porcelain`. If it shows staged or unstaged changes (the plan / spec / INDEX.md updates), commit and push them as a small follow-up commit. The commit ensures the PR's diff reflects the new frontmatter; CI re-runs naturally on the push.
+   2. If the backfill succeeded, check `git status --porcelain`. If it shows staged or unstaged changes (the plan / spec / INDEX.md updates), commit and push them as a small follow-up commit. The commit ensures the PR's diff reflects the new frontmatter; CI re-runs naturally on the push. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
       ```bash
       if [ -n "$(git status --porcelain)" ]; then
         git commit -m "$(cat <<EOF

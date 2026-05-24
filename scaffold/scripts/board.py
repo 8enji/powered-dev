@@ -10,6 +10,7 @@ Usage:
     python board.py start "Task title" [--tier lite|full]
     python board.py finish
     python board.py abandon
+    python board.py set-pr --pr <int> --branch <branch>
     python board.py check-merge <branch>
     python board.py check-pr <branch>
 """
@@ -465,17 +466,17 @@ def _cmd_set_pr(pr: int, branch: str) -> None:
     - Regenerates INDEX.md and stages the touched files.
     """
     if pr <= 0:
-        print(f"ERROR: --pr must be a positive integer, got {pr}.")
+        print(f"ERROR: --pr must be a positive integer, got {pr}.", file=sys.stderr)
         sys.exit(1)
 
     matches = _find_done_plans_for_branch(branch)
     if not matches:
-        print(f"ERROR: No done plan found for branch '{branch}'.")
+        print(f"ERROR: No done plan found for branch '{branch}'.", file=sys.stderr)
         sys.exit(1)
     if len(matches) > 1:
-        print(f"ERROR: Multiple done plans on branch '{branch}' — refusing to ambiguously assign PR.")
+        print(f"ERROR: Multiple done plans on branch '{branch}' — refusing to ambiguously assign PR.", file=sys.stderr)
         for path, _ in matches:
-            print(f"  - {path.name}")
+            print(f"  - {path.name}", file=sys.stderr)
         sys.exit(1)
 
     plan_path, fm = matches[0]

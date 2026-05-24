@@ -655,3 +655,13 @@ def test_set_pr_errors_on_multiple_done_plans_for_branch(tmp_path):
         with pytest.raises(SystemExit) as exc_info:
             board._cmd_set_pr(pr=42, branch="feature/x")
         assert exc_info.value.code == 1
+
+
+def test_set_pr_errors_to_stderr_not_stdout(capsys):
+    """set-pr ERROR messages must go to stderr so /task-ship's 2>/dev/null swallows them."""
+    import pytest
+    with pytest.raises(SystemExit):
+        board._cmd_set_pr(pr=0, branch="x")
+    captured = capsys.readouterr()
+    assert "must be a positive integer" in captured.err
+    assert "ERROR" not in captured.out
