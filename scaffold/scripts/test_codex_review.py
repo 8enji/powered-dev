@@ -461,3 +461,77 @@ def test_render_prompt_with_no_metadata_still_includes_source(tmp_path):
     source.write_text("Body only.\n", encoding="utf-8")
     rendered = render_prompt(mode="pr", metadata={}, prompt_source=source)
     assert "Body only." in rendered
+
+
+import subprocess
+from codex_review import collect_local_evidence, LocalEvidence
+
+
+def _init_repo(path):
+    """Initialize a tiny git repo with one committed file on main."""
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@x"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "T"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "commit.gpgsign", "false"], check=True)
+    (path / "base.py").write_text("print('base')\n")
+    subprocess.run(["git", "-C", str(path), "add", "base.py"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+
+
+def test_collect_local_evidence_finds_staged_and_unstaged(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+
+    (repo / "staged.py").write_text("a\n")
+    subprocess.run(["git", "-C", str(repo), "add", "staged.py"], check=True)
+    (repo / "base.py").write_text("modified\n")
+    (repo / "untracked.py").write_text("u\n")
+
+    ev = collect_local_evidence(repo, review_dir)
+    assert isinstance(ev, LocalEvidence)
+    assert "staged.py" in ev.touched_files
+    assert "base.py" in ev.touched_files
+    assert "untracked.py" in ev.touched_files
+    assert (review_dir / "staged.diff").exists()
+    assert (review_dir / "unstaged.diff").exists()
+
+
+def test_collect_local_evidence_returns_empty_when_clean(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+
+    ev = collect_local_evidence(repo, review_dir)
+    assert ev.touched_files == []
+
+
+def test_collect_local_evidence_picks_base_ref(tmp_path):
+    """Local-mode base ref preference: origin/main > origin/master > main > master."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+    ev = collect_local_evidence(repo, review_dir)
+    assert ev.base_ref == "main"
+
+
+def test_collect_local_evidence_includes_committed_branch_changes(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    review_dir = tmp_path / "review"
+    review_dir.mkdir()
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-b", "feature"], check=True)
+    (repo / "branch.py").write_text("b\n")
+    subprocess.run(["git", "-C", str(repo), "add", "branch.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "feat"], check=True)
+
+    ev = collect_local_evidence(repo, review_dir)
+    assert "branch.py" in ev.touched_files
+    assert (review_dir / "committed.diff").read_text().strip() != ""

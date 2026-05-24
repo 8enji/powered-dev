@@ -302,3 +302,76 @@ def render_prompt(
         parts.extend(["", f"## {title}", body])
     parts.extend(["", prompt_source.read_text(encoding="utf-8")])
     return "\n".join(parts)
+
+
+import subprocess
+
+
+@dataclass(frozen=True)
+class LocalEvidence:
+    touched_files: list[str]
+    base_ref: str  # empty string if no base ref was detected
+
+
+_BASE_REF_CANDIDATES = ("origin/main", "origin/master", "main", "master")
+
+
+def _run_git(repo: Path, args: list[str]) -> str:
+    """Run git capturing stdout; return text (utf-8). Empty string on non-zero exit."""
+    res = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+    )
+    return res.stdout if res.returncode == 0 else ""
+
+
+def _detect_base_ref(repo: Path) -> str:
+    for candidate in _BASE_REF_CANDIDATES:
+        res = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", candidate],
+            capture_output=True,
+        )
+        if res.returncode == 0:
+            return candidate
+    return ""
+
+
+def collect_local_evidence(repo_root: Path, review_dir: Path) -> LocalEvidence:
+    """Capture staged/unstaged/untracked/committed changes into the review directory.
+
+    Writes these files into `review_dir`:
+      - staged-files, unstaged-files, untracked-files, committed-files (newline-separated)
+      - staged.diff, unstaged.diff, committed.diff (unified-diff text)
+
+    Returns the sorted-unique union of touched files plus the detected base ref.
+    """
+    review_dir.mkdir(parents=True, exist_ok=True)
+
+    staged = _run_git(repo_root, ["diff", "--cached", "--name-only"])
+    unstaged = _run_git(repo_root, ["diff", "--no-ext-diff", "--name-only"])
+    untracked = _run_git(repo_root, ["ls-files", "--others", "--exclude-standard"])
+    staged_diff = _run_git(repo_root, ["diff", "--cached"])
+    unstaged_diff = _run_git(repo_root, ["diff", "--no-ext-diff"])
+    base_ref = _detect_base_ref(repo_root)
+    if base_ref:
+        committed = _run_git(repo_root, ["diff", "--name-only", f"{base_ref}...HEAD"])
+        committed_diff = _run_git(repo_root, ["diff", f"{base_ref}...HEAD"])
+    else:
+        committed = ""
+        committed_diff = ""
+
+    (review_dir / "staged-files").write_text(staged, encoding="utf-8")
+    (review_dir / "unstaged-files").write_text(unstaged, encoding="utf-8")
+    (review_dir / "untracked-files").write_text(untracked, encoding="utf-8")
+    (review_dir / "committed-files").write_text(committed, encoding="utf-8")
+    (review_dir / "staged.diff").write_text(staged_diff, encoding="utf-8")
+    (review_dir / "unstaged.diff").write_text(unstaged_diff, encoding="utf-8")
+    (review_dir / "committed.diff").write_text(committed_diff, encoding="utf-8")
+
+    touched: set[str] = set()
+    for text in (staged, unstaged, untracked, committed):
+        for line in text.splitlines():
+            if line.strip():
+                touched.add(line.strip())
+    return LocalEvidence(touched_files=sorted(touched), base_ref=base_ref)
