@@ -64,12 +64,16 @@ def _fmt_entry(rec: dict[str, Any]) -> str:
     doc_type = fm.get("type", "")
     summary = fm.get("summary", "")
 
-    # Build related extras string
+    # Build related extras string. Render list values as [v1, v2] (no quotes).
     extras: list[str] = []
     related = fm.get("related")
     if isinstance(related, dict):
         for k, v in related.items():
-            extras.append(f"{k}: {v}")
+            if isinstance(v, list):
+                rendered = "[" + ", ".join(str(item) for item in v) + "]"
+                extras.append(f"{k}: {rendered}")
+            else:
+                extras.append(f"{k}: {v}")
     branch = fm.get("branch")
     if branch:
         extras.append(f"branch: {branch}")
@@ -217,12 +221,17 @@ def lint(paths: list[Path]) -> tuple[list[str], list[str]]:
                 elif tier == "lite" and has_spec:
                     errors.append(f"{name}: tier `lite` forbids `related.spec`")
 
-        # Warn if done without related.pr
+        # Warn if done without the type-appropriate PR reference
         if status == "done":
             related = fm.get("related")
-            has_pr = isinstance(related, dict) and "pr" in related
-            if not has_pr:
-                warnings.append(f"{name}: status `done` without `related.pr`")
+            related_dict = related if isinstance(related, dict) else {}
+            if doc_type == "plan":
+                if "pr" not in related_dict:
+                    warnings.append(f"{name}: status `done` without `related.pr`")
+            elif doc_type == "spec":
+                prs = related_dict.get("prs")
+                if not isinstance(prs, list) or len(prs) == 0:
+                    warnings.append(f"{name}: status `done` without `related.prs`")
 
     return errors, warnings
 

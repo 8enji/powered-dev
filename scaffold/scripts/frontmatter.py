@@ -29,6 +29,17 @@ def _strip_quotes(val: str) -> str:
     return val
 
 
+def _parse_value(val: str) -> Any:
+    """Parse a YAML scalar value. Returns a list if val is a flow-style list, else a string."""
+    val = val.strip()
+    if len(val) >= 2 and val[0] == "[" and val[-1] == "]":
+        inner = val[1:-1].strip()
+        if not inner:
+            return []
+        return [_strip_quotes(item.strip()) for item in inner.split(",")]
+    return _strip_quotes(val)
+
+
 def _parse_yaml_block(block: str) -> dict[str, Any]:
     result: dict[str, Any] = {}
     lines = block.split("\n")
@@ -45,16 +56,16 @@ def _parse_yaml_block(block: str) -> dict[str, Any]:
         key = m.group(1)
         val = m.group(2).strip()
         if val:
-            result[key] = _strip_quotes(val)
+            result[key] = _parse_value(val)
             i += 1
         else:
-            nested: dict[str, str] = {}
+            nested: dict[str, Any] = {}
             i += 1
             while i < len(lines):
                 child = lines[i]
                 cm = re.match(r"^  ([a-zA-Z_][a-zA-Z0-9_-]*):\s*(.*)", child)
                 if cm:
-                    nested[cm.group(1)] = _strip_quotes(cm.group(2).strip())
+                    nested[cm.group(1)] = _parse_value(cm.group(2).strip())
                     i += 1
                 else:
                     break

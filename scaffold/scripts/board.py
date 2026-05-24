@@ -10,6 +10,7 @@ Usage:
     python board.py start "Task title" [--tier lite|full]
     python board.py finish
     python board.py abandon
+    python board.py set-pr --pr <int> [--branch <branch>]
     python board.py check-merge <branch>
     python board.py check-pr <branch>
 """
@@ -289,6 +290,92 @@ def _flip_status_in_file(path: Path, new_status: str) -> None:
     path.write_text(new_text, encoding="utf-8")
 
 
+def _edit_frontmatter_related(path: Path, mutator) -> None:
+    """Apply mutator to the file's `related` dict and rewrite the frontmatter block.
+
+    mutator: Callable[[dict[str, Any]], dict[str, Any]] — receives the current
+    related dict (empty dict if absent), returns the new related dict.
+
+    Preserves all non-related frontmatter lines and the body verbatim. The
+    `related:` block is fully rewritten using `key: value` for scalars and
+    `key: [v1, v2]` for lists.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+
+    if not lines or lines[0] != "---":
+        return  # No frontmatter; nothing to edit
+    fm_end = None
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            fm_end = i
+            break
+    if fm_end is None:
+        return  # Malformed frontmatter
+
+    related_start = None
+    related_end = None
+    for i in range(1, fm_end):
+        if re.match(r"^related\s*:\s*$", lines[i]):
+            related_start = i
+            j = i + 1
+            while j < fm_end:
+                if lines[j].startswith("  ") or lines[j].strip() == "":
+                    j += 1
+                else:
+                    break
+            related_end = j
+            break
+
+    fm = parse_frontmatter(path) or {}
+    current = fm.get("related")
+    current_related: dict[str, Any] = current if isinstance(current, dict) else {}
+
+    new_related = mutator(dict(current_related))
+
+    if new_related:
+        related_lines = ["related:"]
+        for k, v in new_related.items():
+            if isinstance(v, list):
+                rendered = "[" + ", ".join(str(item) for item in v) + "]"
+                related_lines.append(f"  {k}: {rendered}")
+            else:
+                related_lines.append(f"  {k}: {v}")
+    else:
+        related_lines = []
+
+    if related_start is not None:
+        new_lines = lines[:related_start] + related_lines + lines[related_end:]
+    else:
+        new_lines = lines[:fm_end] + related_lines + lines[fm_end:]
+
+    path.write_text("\n".join(new_lines), encoding="utf-8")
+
+
+def _set_related_scalar(path: Path, key: str, value: Any) -> None:
+    """Set `related.<key>: <value>` in the file's frontmatter. Idempotent."""
+    def mutator(d: dict[str, Any]) -> dict[str, Any]:
+        d[key] = value
+        return d
+    _edit_frontmatter_related(path, mutator)
+
+
+def _append_related_list(path: Path, key: str, value: int) -> None:
+    """Append `value` to the list at `related.<key>`, deduplicated. Idempotent.
+
+    Compares as strings since parsed values come back as strings.
+    """
+    def mutator(d: dict[str, Any]) -> dict[str, Any]:
+        existing = d.get(key, [])
+        if not isinstance(existing, list):
+            existing = [existing] if existing else []
+        if str(value) not in [str(x) for x in existing]:
+            existing.append(value)
+        d[key] = existing
+        return d
+    _edit_frontmatter_related(path, mutator)
+
+
 def _find_active_plan_for_branch(branch: str) -> tuple[Path, dict[str, Any]] | None:
     """Find the one active plan for a branch. Returns (path, fm) or None."""
     all_plans = _collect_plans(PLANS_ROOT)
@@ -296,6 +383,16 @@ def _find_active_plan_for_branch(branch: str) -> tuple[Path, dict[str, Any]] | N
         if fm.get("branch") == branch and fm.get("status") == "active":
             return path, fm
     return None
+
+
+def _find_done_plans_for_branch(branch: str) -> list[tuple[Path, dict[str, Any]]]:
+    """Return all plans whose branch matches and whose status is `done`."""
+    all_plans = _collect_plans(PLANS_ROOT)
+    return [
+        (path, fm)
+        for path, fm in all_plans
+        if fm.get("branch") == branch and fm.get("status") == "done"
+    ]
 
 
 def _other_active_plans_reference_spec(plan_to_exclude: Path, spec_name: str) -> bool:
@@ -357,6 +454,60 @@ def _cmd_finish() -> None:
 def _cmd_abandon() -> None:
     """Mark the active plan as abandoned."""
     _finish_or_abandon("abandoned")
+
+
+def _cmd_set_pr(pr: int, branch: str | None) -> None:
+    """Backfill a PR number onto the done plan for `branch` and its linked spec.
+
+    - Requires pr > 0.
+    - If branch is None, falls back to the current git branch.
+    - Requires exactly one done plan on the branch.
+    - Writes related.pr on the plan.
+    - For full tier, appends to related.prs on the linked spec (if it exists on disk).
+    - Regenerates INDEX.md and stages the touched files.
+    """
+    if pr <= 0:
+        print(f"ERROR: --pr must be a positive integer, got {pr}.", file=sys.stderr)
+        sys.exit(1)
+
+    if branch is None:
+        branch = _current_branch()
+
+    matches = _find_done_plans_for_branch(branch)
+    if not matches:
+        print(f"ERROR: No done plan found for branch '{branch}'.", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"ERROR: Multiple done plans on branch '{branch}' — refusing to ambiguously assign PR.", file=sys.stderr)
+        for path, _ in matches:
+            print(f"  - {path.name}", file=sys.stderr)
+        sys.exit(1)
+
+    plan_path, fm = matches[0]
+    touched: list[Path] = []
+
+    _set_related_scalar(plan_path, "pr", pr)
+    print(f"Updated {plan_path.name}: related.pr -> {pr}")
+    touched.append(plan_path)
+
+    tier = fm.get("tier", "lite")
+    if tier == "full":
+        related = fm.get("related")
+        if isinstance(related, dict) and "spec" in related:
+            spec_name = related["spec"]
+            spec_path = SPECS_ROOT / spec_name
+            if spec_path.exists():
+                _append_related_list(spec_path, "prs", pr)
+                print(f"Updated {spec_path.name}: appended {pr} to related.prs")
+                touched.append(spec_path)
+            else:
+                print(f"Skipping spec {spec_name} — file does not exist.")
+
+    _regen_index()
+    touched.append(INDEX_PATH)
+
+    _git_add(touched)
+    print(f"Done. Run `git commit` to finalize.")
 
 
 def _cmd_start(title: str, tier: str) -> None:
@@ -471,6 +622,17 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("finish", help="Mark active plan as done")
     sub.add_parser("abandon", help="Mark active plan as abandoned")
 
+    set_pr_p = sub.add_parser(
+        "set-pr",
+        help="Backfill a PR number onto the done plan for a branch (and its spec)",
+    )
+    set_pr_p.add_argument("--pr", type=int, required=True, help="GitHub PR number (positive int)")
+    set_pr_p.add_argument(
+        "--branch",
+        default=None,
+        help="Branch name whose done plan to update (default: current branch)",
+    )
+
     check_merge_p = sub.add_parser("check-merge", help="Gate for git merge")
     check_merge_p.add_argument("branch", help="Branch name to check")
 
@@ -487,6 +649,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_finish()
     elif args.command == "abandon":
         _cmd_abandon()
+    elif args.command == "set-pr":
+        _cmd_set_pr(args.pr, args.branch)
     elif args.command == "check-merge":
         _cmd_check_merge(args.branch)
     elif args.command == "check-pr":

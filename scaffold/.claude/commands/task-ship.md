@@ -78,6 +78,25 @@ Ship the current branch.
      gh pr edit $PR --body "$(printf '%s\n\nPull-Request: %s\n' "$BODY" "$PR_URL")"
    fi
    ```
+6. **Backfill the PR number onto the branch's done plan, if any.** This step runs after `$PR` is captured. It is a no-op when there is no done plan on the branch (e.g. the user shipped work that is not board-managed).
+   1. Attempt the backfill:
+      ```bash
+      python3 scripts/board.py set-pr --pr "$PR" --branch "$BRANCH" 2>/dev/null
+      ```
+      Capture the exit code. If non-zero, skip the rest of step 6.
+   2. If the backfill succeeded, check `git status --porcelain`. If it shows staged or unstaged changes (the plan / spec / INDEX.md updates), commit and push them as a small follow-up commit. The commit ensures the PR's diff reflects the new frontmatter; CI re-runs naturally on the push. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
+      ```bash
+      if [ -n "$(git status --porcelain)" ]; then
+        git commit -m "$(cat <<EOF
+      chore(board): backfill PR #$PR onto plan/spec
+
+      Co-Authored-By: Claude <noreply@anthropic.com>
+      EOF
+      )"
+        git push
+      fi
+      ```
+   3. If the porcelain output is empty after a successful `set-pr`, the PR was already recorded (idempotent rerun); skip the commit/push.
 
 ## 3. Watch CI in the background
 
