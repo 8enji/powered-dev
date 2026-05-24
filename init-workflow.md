@@ -28,27 +28,35 @@ Bootstrap the powered-dev workflow into this project.
 
 ## Step 1 — Gather configuration
 
-Make a **single** `AskUserQuestion` call with all three questions below — the tool accepts up to 4 questions per call, so batch into one round-trip rather than asking sequentially.
+Make a **single** `AskUserQuestion` call with all three questions below — the tool accepts up to 4 questions per call. For Q1 (free text) and Q2 (potentially a custom command), the call returns an *intent*, and you then resolve the actual value as described in the mapping section. This mirrors `task-ship.md`'s "Let me edit" pattern.
 
-1. **Project description** (1-2 sentences for CLAUDE.md `## What this is` section).
+1. **Project description** — for CLAUDE.md `## What this is` section.
    - Header: "Description"
    - Question: "Short project description (1-2 sentences)?"
-   - Options: **I'll type a description** / **Skip (fill in manually later)** — the user picks the first option and types the actual text via the "Other" affordance the tool always exposes for free-text input.
-   - Required.
+   - Options: **I'll type a description** / **Skip — fill in manually later**
 
-2. **Gate command** — the command that must pass before claiming a task is done. This is also wired into the pre-commit Claude hook.
+2. **Gate command** — the command that must pass before claiming a task is done. Also wired into the pre-commit Claude hook.
    - Header: "Gate command"
    - Question: "What command should pass before a task can be marked done? This typically chains lint + typecheck + test."
-   - Options: **`make all`** / **`npm run lint && npm test`** / **`ruff check . && pytest`** — pick "Other" for a custom command.
-   - Required.
+   - Options: **`make all`** / **`npm run lint && npm test`** / **`ruff check . && pytest`**
 
 3. **Codex review** — whether to install the `/request-codex-review` slash command.
    - Header: "Codex review"
    - Question: "Install Codex automated review (`/request-codex-review`)? Supports PR and local-change reviews. Requires Codex.app."
-   - Options: **Yes** / **No**
-   - Default: No.
+   - Options: **Yes** / **No** (default No).
 
-Store answers as `$PROJECT_DESCRIPTION`, `$GATE_CMD`, `$INSTALL_CODEX`. If the user picked **Skip** for project description, leave the `## What this is` section blank in the rendered CLAUDE.md.
+Derive shell variables from the response:
+
+- **`$PROJECT_DESCRIPTION`** — depends on Q1:
+  - If the user picked **I'll type a description** → ask in a follow-up turn ("Please provide a 1-2 sentence project description.") and store their reply.
+  - If the user picked **Skip** → set `$PROJECT_DESCRIPTION=""` (Step 4a substitutes a TODO marker so the section header stays intact).
+  - If the user clicked the harness-injected **Other** and typed text → use that typed text directly, no follow-up needed.
+- **`$GATE_CMD`** — depends on Q2:
+  - If the user picked one of the three listed options → use that option's literal command string.
+  - If the user clicked the harness-injected **Other** and typed a custom command → use the typed text.
+- **`$INSTALL_CODEX`** — `"Yes"` if Q3 was **Yes**, otherwise `"No"`.
+
+If Q1's follow-up is needed *and* Q2's Other text wasn't supplied, bundle into a single follow-up prompt to keep the worst case at 2 round-trips.
 
 ## Step 2 — Fetch scaffold
 
@@ -106,7 +114,7 @@ Create all necessary parent directories with `mkdir -p` before copying. Use `cp`
 ### 4a. Render CLAUDE.md
 
 Read `CLAUDE.md.template` from the staging directory. Replace:
-- `__PROJECT_DESCRIPTION__` → `$PROJECT_DESCRIPTION`
+- `__PROJECT_DESCRIPTION__` → `$PROJECT_DESCRIPTION` if non-empty, otherwise the literal `<!-- TODO: 1-2 sentence project description -->` (preserves the surrounding section header so the user has a visible marker to fill in later).
 - `__GATE_CMD__` → `$GATE_CMD`
 
 Save the rendered result. Then:
