@@ -14,6 +14,10 @@ def test_legacy_task_codex_review_command_is_not_installed():
     assert not (ROOT / ".claude/commands/task-codex-review.md").exists()
 
 
+def test_task_finish_command_is_not_installed():
+    assert not (ROOT / ".claude/commands/task-finish.md").exists()
+
+
 def test_task_backlog_command_is_not_installed():
     assert not (ROOT / ".claude/commands/task-backlog.md").exists()
 
@@ -28,7 +32,6 @@ def test_in_flight_artifact_is_not_installed_or_documented():
         "../docs/how-it-works.md",
         "CLAUDE.md.template",
         ".claude/commands/task-start.md",
-        ".claude/commands/task-finish.md",
         ".claude/commands/task-ship.md",
         "scripts/board.py",
         "scripts/githooks/pre-commit",
@@ -42,13 +45,6 @@ def test_ship_checks_finished_task_before_commit():
 
     assert 'python3 scripts/board.py check-merge "$BRANCH"' in ship
     assert "python3 scripts/board.py finish" in ship
-
-
-def test_finish_hands_off_cleanly_to_ship():
-    finish = _read(".claude/commands/task-finish.md")
-
-    assert "gate command documented in `CLAUDE.md`" in finish
-    assert "continue to `/task-ship`" in finish
 
 
 def test_start_defers_commit_to_ship():
@@ -135,6 +131,17 @@ def test_installer_uses_request_codex_review_name():
     assert "task-codex-review" not in how_it_works
     assert "/request-codex-review" in readme
     assert "task-codex-review" not in readme
+
+
+def test_installer_and_docs_do_not_reference_task_finish():
+    init = _read("../init-workflow.md")
+    readme = _read("../README.md")
+    how_it_works = _read("../docs/how-it-works.md")
+    ship = _read(".claude/commands/task-ship.md")
+
+    for content in (init, readme, how_it_works, ship):
+        assert "task-finish" not in content
+        assert "/task-finish" not in content
 
 
 def test_installer_does_not_copy_removed_command_or_in_flight_artifact():

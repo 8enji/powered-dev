@@ -89,7 +89,6 @@ For each file below, check if it already exists in the target project. If it doe
 | `scripts/githooks/pre-commit` | `scripts/githooks/pre-commit` |
 | `scripts/claude_hooks/pre_merge_gate.sh` | `scripts/claude_hooks/pre_merge_gate.sh` |
 | `.claude/commands/task-start.md` | `.claude/commands/task-start.md` |
-| `.claude/commands/task-finish.md` | `.claude/commands/task-finish.md` |
 | `.claude/commands/task-ship.md` | `.claude/commands/task-ship.md` |
 | `.github/workflows/board-gate.yml` | `.github/workflows/board-gate.yml` |
 | `docs/board/backlog.md` | `docs/board/backlog.md` |
@@ -208,7 +207,7 @@ Installed:
   scripts/board.py, docs_index.py, frontmatter.py
   scripts/githooks/pre-commit
   scripts/claude_hooks/pre_merge_gate.sh
-  .claude/commands/task-{start,finish,ship}.md
+  .claude/commands/task-{start,ship}.md
   [if codex] .claude/commands/request-codex-review.md + codex support files
   .claude/settings.json (hooks merged)
   .github/workflows/board-gate.yml
