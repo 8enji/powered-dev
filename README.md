@@ -21,7 +21,7 @@ Then in Claude Code:
 
 - **Board system** — `docs/board/backlog.md` -> `/task-start` -> spec/plan stubs -> `/task-ship`
 - **Merge gates** — three rings: Claude Code PreToolUse hook, git pre-commit hook, GitHub Action
-- **Slash commands** — `/task-start`, `/task-ship`; `/task-finish` for manual completion; `/request-codex-review` as an optional separate review command
+- **Slash commands** — `/task-start`, `/task-ship`; `/request-codex-review` as an optional separate review command
 - **Doc indexing** — auto-generated `INDEX.md` from YAML frontmatter, drift-checked on commit
 
 ## Requirements
@@ -53,7 +53,7 @@ Optional: run `/request-codex-review` separately when you want a Codex review of
 
 ## Failure recovery
 
-- **Active plan blocks push or PR creation** — `/task-ship` can finish the active plan inline if the work is complete, or run `python3 scripts/board.py abandon` if the task should be closed without shipping.
+- **Active plan blocks push or PR creation** — `/task-ship` can finish the active plan inline if the work is complete. To flip status manually without shipping (rare), run `python3 scripts/board.py finish`. To close a task without shipping it at all, run `python3 scripts/board.py abandon`.
 - **Commit fails after docs regenerate** — review the regenerated `docs/superpowers/INDEX.md`, stage it, and commit again.
 - **Codex review wakes up later** — continue from the same conversation. The review command stores state under `/tmp/codex-review-*.state.json` or `/tmp/codex-local-review-*.state.json` so the agent can resume posting the review or writing the local report.
 - **CI watch fails or has no required checks** — `/task-ship` will ask whether to watch non-required checks, merge now, stop, open the run, print logs, or invoke systematic debugging.

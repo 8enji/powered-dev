@@ -33,10 +33,6 @@ Pass a title (`/task-start "Fix login bug"`) to start an ad hoc task without a b
 
 If the superpowers plugin is installed, it then chains into brainstorming (full tier) or plan writing (lite tier).
 
-### `/task-finish`
-
-Manual escape hatch for completion. Runs `board.py finish`, which flips the active plan's status to `done` (and linked spec if applicable). `/task-ship` can run the same finish step inline, so most users do not need this command in the main path.
-
 ### `/task-ship`
 
 Handles the full ship cycle: finish the active plan when needed, commit with a drafted message, push, open or reuse a PR, watch CI in the background, then prompt to merge (green) or debug (red).
@@ -87,7 +83,6 @@ scripts/
 .claude/
   commands/
     task-start.md      Pick up a backlog item
-    task-finish.md     Manually mark current task done
     task-ship.md       Commit, push, PR, CI, merge
     request-codex-review.md  (optional) Codex-powered PR/local review
   codex/
