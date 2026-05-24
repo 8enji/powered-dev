@@ -99,11 +99,18 @@ def _classify_checks(checks: list[dict]) -> str:
 
 
 def _gh_checks_json(pr: int, required_only: bool) -> list[dict]:
-    """Call `gh pr checks <pr> [--required] --json name,state`. Return [] on any failure."""
+    """Call `gh pr checks <pr> [--required] --json name,state`. Return [] on any failure.
+
+    Times out after 30s; timeout is treated as another graceful-degradation case
+    so a stalled `gh` invocation doesn't hang the calling slash command.
+    """
     cmd = ["gh", "pr", "checks", str(pr), "--json", "name,state"]
     if required_only:
         cmd.append("--required")
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
+    except subprocess.TimeoutExpired:
+        return []
     if not result.stdout.strip():
         return []
     try:

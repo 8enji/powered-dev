@@ -169,3 +169,10 @@ def test_gh_checks_json_returns_empty_on_malformed_json() -> None:
         run.return_value = mock.Mock(returncode=0, stdout="not json", stderr="")
         result = ship_ci._gh_checks_json(pr=123, required_only=True)
     assert result == []
+
+
+def test_gh_checks_json_returns_empty_on_timeout() -> None:
+    with mock.patch.object(ship_ci.subprocess, "run") as run:
+        run.side_effect = ship_ci.subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
+        result = ship_ci._gh_checks_json(pr=123, required_only=True)
+    assert result == []
