@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -561,6 +562,17 @@ def _clear_prior_dir(kind: str, key: str, tmp_root: Path) -> None:
         subprocess.run(["rm", "-rf", str(prior)], check=False)
 
 
+def _write_dispatch_env(path: Path, **values: object) -> None:
+    """Write a sourceable `KEY=value` file with shell-safe quoting.
+
+    Sourcing the file with `. "$file"` in bash will set each KEY to the
+    exact string passed in, even if it contains spaces, `$`, backticks, or
+    other shell metacharacters.
+    """
+    lines = [f"{key}={shlex.quote(str(value))}\n" for key, value in values.items()]
+    path.write_text("".join(lines), encoding="utf-8")
+
+
 def _do_prepare_local(
     parsed: ParsedArgs,
     repo: Path,
@@ -607,11 +619,11 @@ def _do_prepare_local(
         "focus": parsed.focus,
     }
     paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    paths.dispatch_env.write_text(
-        f"CODEX_REVIEW_DIR={paths.review_dir}\n"
-        f"CODEX_REVIEW_SCHEMA={schema_path}\n"
-        f"CODEX_REVIEW_ROOT={repo}\n",
-        encoding="utf-8",
+    _write_dispatch_env(
+        paths.dispatch_env,
+        CODEX_REVIEW_DIR=paths.review_dir,
+        CODEX_REVIEW_SCHEMA=schema_path,
+        CODEX_REVIEW_ROOT=repo,
     )
     paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
     print(str(paths.review_dir))
@@ -695,11 +707,11 @@ def _do_prepare(args: argparse.Namespace) -> int:
         "focus": parsed.focus,
     }
     paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    paths.dispatch_env.write_text(
-        f"CODEX_REVIEW_DIR={paths.review_dir}\n"
-        f"CODEX_REVIEW_SCHEMA={schema_path}\n"
-        f"CODEX_REVIEW_ROOT={review_root}\n",
-        encoding="utf-8",
+    _write_dispatch_env(
+        paths.dispatch_env,
+        CODEX_REVIEW_DIR=paths.review_dir,
+        CODEX_REVIEW_SCHEMA=schema_path,
+        CODEX_REVIEW_ROOT=review_root,
     )
     paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
     print(str(paths.review_dir))

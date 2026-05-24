@@ -1146,3 +1146,31 @@ def test_end_to_end_local_review(tmp_path, monkeypatch):
     assert "Smoke test summary." in body
     assert "## [minor] feature.py:1" in body
     assert "**Findings:** 0 critical · 0 major · 1 minor · 0 nit" in body
+
+
+import shlex
+from codex_review import _write_dispatch_env
+
+
+def test_dispatch_env_quotes_paths_with_spaces(tmp_path):
+    """dispatch.env must survive `bash -c '. file; echo $VAR'` for paths with spaces."""
+    target = tmp_path / "dispatch.env"
+    _write_dispatch_env(
+        target,
+        CODEX_REVIEW_DIR="/path with space/foo",
+        CODEX_REVIEW_SCHEMA="/another path/schema.json",
+        CODEX_REVIEW_ROOT="/repo with $dollar/and `backtick`/inside",
+    )
+    # Source the file via bash and echo each var; check round-trip.
+    script = (
+        f". {shlex.quote(str(target))}; "
+        "printf '%s\\n' \"$CODEX_REVIEW_DIR\" \"$CODEX_REVIEW_SCHEMA\" \"$CODEX_REVIEW_ROOT\""
+    )
+    res = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True, text=True, check=True,
+    )
+    lines = res.stdout.splitlines()
+    assert lines[0] == "/path with space/foo"
+    assert lines[1] == "/another path/schema.json"
+    assert lines[2] == "/repo with $dollar/and `backtick`/inside"
