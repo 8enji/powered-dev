@@ -382,6 +382,14 @@ from typing import Callable
 CommandRunner = Callable[[list[str]], tuple[str, str, int]]
 
 
+class NoPRForBranchError(LookupError):
+    """`gh pr view` cleanly reports no PR exists for the current branch.
+
+    Distinguished from generic LookupError (auth/network/other gh failures) so
+    callers can fall back to local-change mode on this specific signal.
+    """
+
+
 @dataclass(frozen=True)
 class PRMetadata:
     pr: str
@@ -415,7 +423,7 @@ def _split_identifier(identifier: str) -> tuple[str, str, str] | None:
 def resolve_pr_metadata(
     *,
     identifier: str | None,
-    runner: CommandRunner = _default_runner,
+    runner: CommandRunner | None = None,
 ) -> PRMetadata:
     """Resolve PR metadata via `gh`.
 
@@ -425,10 +433,16 @@ def resolve_pr_metadata(
 
     Raises LookupError if `gh pr view` reports no PR.
     """
+    if runner is None:
+        runner = _default_runner
     if identifier is None:
-        out, _, rc = runner(["gh", "pr", "view", "--json", _PR_FIELDS])
+        out, stderr_text, rc = runner(["gh", "pr", "view", "--json", _PR_FIELDS])
         if rc != 0:
-            raise LookupError("No open PR for the current branch.")
+            if _stderr_indicates_no_pr_for_branch(stderr_text):
+                raise NoPRForBranchError("No open PR for the current branch.")
+            raise LookupError(
+                f"`gh pr view` failed (rc={rc}): {stderr_text.strip() or 'no stderr'}"
+            )
         pr_data = json.loads(out)
         out2, _, rc2 = runner(["gh", "repo", "view", "--json", "owner,name"])
         if rc2 != 0:
@@ -547,6 +561,63 @@ def _clear_prior_dir(kind: str, key: str, tmp_root: Path) -> None:
         subprocess.run(["rm", "-rf", str(prior)], check=False)
 
 
+def _do_prepare_local(
+    parsed: ParsedArgs,
+    repo: Path,
+    tmp_root: Path,
+    prompt_source: Path,
+    schema_path: Path,
+) -> int:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    review_id = f"{ts}-{_head_short_sha(repo)}"
+    _clear_prior_dir("local", review_id, tmp_root)
+    paths = review_paths("local", review_id, tmp_root=tmp_root, create=True)
+    evidence = collect_local_evidence(repo, paths.review_dir)
+    if not evidence.touched_files:
+        print("No local changes found to review.", file=sys.stderr)
+        return 2
+    paths.touched_files.write_text(
+        "\n".join(evidence.touched_files) + "\n", encoding="utf-8"
+    )
+    prompt_text = render_prompt(
+        mode="local",
+        metadata={
+            "Review ID": review_id,
+            "Base ref": evidence.base_ref or "none",
+            "Head SHA": _run_git(repo, ["rev-parse", "HEAD"]).strip() or "unknown",
+            "Focus (from invoker, may be empty)": parsed.focus,
+            "Touched files": "\n".join(evidence.touched_files),
+            "Diffs available on disk": (
+                f"- Staged diff: {paths.review_dir / 'staged.diff'}\n"
+                f"- Unstaged diff: {paths.review_dir / 'unstaged.diff'}\n"
+                f"- Committed diff: {paths.review_dir / 'committed.diff'}"
+            ),
+        },
+        prompt_source=prompt_source,
+    )
+    paths.prompt.write_text(prompt_text, encoding="utf-8")
+    paths.review_root.write_text(str(repo) + "\n", encoding="utf-8")
+    state = {
+        "mode": "local",
+        "review_id": review_id,
+        "review_root": str(repo),
+        "base_ref": evidence.base_ref,
+        "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
+        "schema_path": str(schema_path),
+        "focus": parsed.focus,
+    }
+    paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    paths.dispatch_env.write_text(
+        f"CODEX_REVIEW_DIR={paths.review_dir}\n"
+        f"CODEX_REVIEW_SCHEMA={schema_path}\n"
+        f"CODEX_REVIEW_ROOT={repo}\n",
+        encoding="utf-8",
+    )
+    paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
+    print(str(paths.review_dir))
+    return 0
+
+
 def _do_prepare(args: argparse.Namespace) -> int:
     arg_string = args.arguments or ""
     repo = Path.cwd()
@@ -564,58 +635,14 @@ def _do_prepare(args: argparse.Namespace) -> int:
     )
 
     if parsed.mode == "local":
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        review_id = f"{ts}-{_head_short_sha(repo)}"
-        _clear_prior_dir("local", review_id, tmp_root)
-        paths = review_paths("local", review_id, tmp_root=tmp_root, create=True)
-        evidence = collect_local_evidence(repo, paths.review_dir)
-        if not evidence.touched_files:
-            print("No local changes found to review.", file=sys.stderr)
-            return 2
-        paths.touched_files.write_text(
-            "\n".join(evidence.touched_files) + "\n", encoding="utf-8"
-        )
-        prompt_text = render_prompt(
-            mode="local",
-            metadata={
-                "Review ID": review_id,
-                "Base ref": evidence.base_ref or "none",
-                "Head SHA": _run_git(repo, ["rev-parse", "HEAD"]).strip() or "unknown",
-                "Focus (from invoker, may be empty)": parsed.focus,
-                "Touched files": "\n".join(evidence.touched_files),
-                "Diffs available on disk": (
-                    f"- Staged diff: {paths.review_dir / 'staged.diff'}\n"
-                    f"- Unstaged diff: {paths.review_dir / 'unstaged.diff'}\n"
-                    f"- Committed diff: {paths.review_dir / 'committed.diff'}"
-                ),
-            },
-            prompt_source=prompt_source,
-        )
-        paths.prompt.write_text(prompt_text, encoding="utf-8")
-        paths.review_root.write_text(str(repo) + "\n", encoding="utf-8")
-        state = {
-            "mode": "local",
-            "review_id": review_id,
-            "review_root": str(repo),
-            "base_ref": evidence.base_ref,
-            "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
-            "schema_path": str(schema_path),
-            "focus": parsed.focus,
-        }
-        paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        paths.dispatch_env.write_text(
-            f"CODEX_REVIEW_DIR={paths.review_dir}\n"
-            f"CODEX_REVIEW_SCHEMA={schema_path}\n"
-            f"CODEX_REVIEW_ROOT={repo}\n",
-            encoding="utf-8",
-        )
-        paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
-        print(str(paths.review_dir))
-        return 0
+        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path)
 
     # PR mode — current-branch or explicit
     try:
         meta = resolve_pr_metadata(identifier=parsed.identifier)
+    except NoPRForBranchError:
+        # Invariant #1: feature branch with no PR → fall back to local mode.
+        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path)
     except LookupError as e:
         print(str(e), file=sys.stderr)
         return 2
@@ -788,6 +815,12 @@ def _stderr_indicates_comments_422(stderr_text: str) -> bool:
     return "unprocessable entity" in lower or (
         "comments" in lower and "422" in lower
     )
+
+
+def _stderr_indicates_no_pr_for_branch(stderr_text: str) -> bool:
+    """True if gh's stderr indicates the branch has no PR (vs. auth/network/etc.)."""
+    lower = stderr_text.lower()
+    return "no pull requests found" in lower or "no pull request found" in lower
 
 
 def _finish_pr(state: dict, review_dir: Path) -> int:

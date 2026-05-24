@@ -33,7 +33,7 @@ Use the `Bash` tool with `run_in_background: true`:
     --sandbox read-only \
     --cd "$CODEX_REVIEW_ROOT" \
     - < "$CODEX_REVIEW_DIR/prompt.txt" \
-    > "$CODEX_REVIEW_DIR/codex.jsonl" 2> "$CODEX_REVIEW_DIR/review-stderr"
+    > "$CODEX_REVIEW_DIR/codex.jsonl" 2>&1
   echo "__CODEX_EXIT__=$?" > "$CODEX_REVIEW_DIR/status"
 )
 ```

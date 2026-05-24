@@ -654,6 +654,34 @@ def test_resolve_pr_no_pr_on_current_branch_raises():
         resolve_pr_metadata(identifier=None, runner=runner)
 
 
+def test_resolve_pr_no_pr_branch_raises_specific_subclass():
+    """gh stderr signal "no pull requests found" surfaces as NoPRForBranchError, a subclass."""
+    from codex_review import NoPRForBranchError
+    runner = _FakeRunner([
+        (["gh", "pr", "view"], ("", "no pull requests found for branch \"feature\"\n", 1)),
+    ])
+    with pytest.raises(NoPRForBranchError):
+        resolve_pr_metadata(identifier=None, runner=runner)
+    # And it's still catchable as LookupError for backward compat:
+    runner2 = _FakeRunner([
+        (["gh", "pr", "view"], ("", "no pull requests found for branch \"x\"\n", 1)),
+    ])
+    with pytest.raises(LookupError):
+        resolve_pr_metadata(identifier=None, runner=runner2)
+
+
+def test_resolve_pr_auth_failure_is_generic_lookup_error():
+    """Auth/network errors surface as plain LookupError, NOT NoPRForBranchError."""
+    from codex_review import NoPRForBranchError
+    runner = _FakeRunner([
+        (["gh", "pr", "view"], ("", "authentication required: run 'gh auth login'\n", 4)),
+    ])
+    with pytest.raises(LookupError) as exc_info:
+        resolve_pr_metadata(identifier=None, runner=runner)
+    assert not isinstance(exc_info.value, NoPRForBranchError)
+    assert "authentication required" in str(exc_info.value)
+
+
 from codex_review import setup_pr_worktree, collect_pr_touched_files
 
 
@@ -782,6 +810,71 @@ def test_prepare_clears_stale_review_dir(tmp_path, monkeypatch):
     rc2 = codex_main(["prepare", ""])
     assert rc2 == 0
     assert not stale.exists()  # prior run's leftover got wiped
+
+
+def test_prepare_falls_back_to_local_on_no_pr_for_branch(tmp_path, monkeypatch):
+    """Feature branch + empty args + no PR → local mode fallback (invariant #1)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    # Move off main onto a feature branch with at least one local change.
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-q", "-b", "feature/foo"], check=True
+    )
+    (repo / "new.py").write_text("x\n")
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    # Patch _default_runner to simulate gh reporting "no PR for branch".
+    def fake_runner(cmd):
+        if cmd[:3] == ["gh", "pr", "view"]:
+            return ("", "no pull requests found for branch \"feature/foo\"\n", 1)
+        return ("", "", 1)
+    monkeypatch.setattr("codex_review._default_runner", fake_runner)
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    rc = codex_main(["prepare", ""])
+    assert rc == 0
+    review_dir = Path((tmp_path / "tmp" / "codex-review.latest").read_text().strip())
+    state = json.loads((review_dir / "state.json").read_text())
+    assert state["mode"] == "local"
+
+
+def test_prepare_returns_error_on_gh_auth_failure(tmp_path, monkeypatch, capsys):
+    """Auth failure (not no-PR) surfaces an error, does NOT fall back to local."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-q", "-b", "feature/foo"], check=True
+    )
+    (repo / "new.py").write_text("x\n")
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    def fake_runner(cmd):
+        if cmd[:3] == ["gh", "pr", "view"]:
+            return ("", "authentication required: run 'gh auth login'\n", 4)
+        return ("", "", 1)
+    monkeypatch.setattr("codex_review._default_runner", fake_runner)
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    rc = codex_main(["prepare", ""])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "authentication required" in err.lower() or "gh pr view" in err.lower()
 
 
 def test_finish_local_writes_report(tmp_path, monkeypatch, capsys):
