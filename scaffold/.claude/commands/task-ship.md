@@ -100,26 +100,34 @@ Ship the current branch.
 
 ## 3. Watch CI in the background
 
-Clear leftover state: `rm -f /tmp/ship-$PR.retries /tmp/ship-$PR.status /tmp/ship-$PR.all-status`.
+1. Initialize state: `python3 scripts/ship_ci.py start --pr "$PR"`.
+2. Dispatch the watch via the `Bash` tool with `run_in_background: true`:
 
-Use the `Bash` tool with `run_in_background: true`:
+   ```bash
+   gh pr checks "$PR" --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status
+   ```
 
-```bash
-gh pr checks $PR --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status
-```
-
-End the turn. The harness notifies when the background process exits.
+3. End the turn. The harness notifies when the background process exits.
 
 **On wake:**
-1. If `/tmp/ship-$PR.all-status` exists → all-checks mode (wake step 4). Otherwise → required-checks mode (wake step 2).
-2. **Required-checks mode.** Read `/tmp/ship-$PR.status`, parse exit code. If 0 → Green path. Otherwise wake step 3.
-3. **Required-checks mode, non-zero.** Run `gh pr checks $PR --required --json name,state` and disambiguate:
-   - No required checks configured + non-required checks exist → ask user: **Watch non-required CI** / **Merge now** / **Stop**.
-   - Timing race (no checks at all) → retry with 15s pre-sleep, max 5 retries.
-   - Checks still pending → re-dispatch watch.
-   - All resolved with failures → Red path.
-   - All resolved, none failed → Green path.
-4. **All-checks mode.** Same logic as wake step 3 but without `--required`.
+
+Run `ACTION=$(python3 scripts/ship_ci.py next-action --pr "$PR")` and branch on `$ACTION`:
+
+| `$ACTION`                          | Do                                                                                              |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `done-green`                       | Continue to section 4 (Green path).                                                             |
+| `done-red`                         | Continue to section 5 (Red path).                                                               |
+| `redispatch-required`              | Re-dispatch `gh pr checks "$PR" --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn. |
+| `redispatch-all`                   | Re-dispatch `gh pr checks "$PR" --watch ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn.            |
+| `redispatch-required-after-15s`    | `sleep 15`, then re-dispatch the required watch as above. End turn.                             |
+| `redispatch-all-after-15s`         | `sleep 15`, then re-dispatch the all watch as above. End turn.                                  |
+| `ask-non-required`                 | `AskUserQuestion`: **Watch non-required CI** / **Merge now** / **Stop**. See below for actions. |
+| `retries-exhausted`                | Print "CI checks never appeared after 5 retries; PR #$PR may be misconfigured." Stop.           |
+
+For `ask-non-required` follow-up:
+- **Watch non-required CI** → `python3 scripts/ship_ci.py switch-mode --pr "$PR" --to all`, then dispatch `gh pr checks "$PR" --watch ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn.
+- **Merge now** → continue to section 4 (Green path).
+- **Stop** → print PR URL and stop.
 
 ## 4. Green path
 
