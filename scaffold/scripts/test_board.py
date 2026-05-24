@@ -200,3 +200,32 @@ def test_start_creates_ad_hoc_when_backlog_file_missing(tmp_path):
     assert index in staged
     assert backlog not in staged
     assert not backlog.exists()
+
+
+def test_start_full_tier_ad_hoc_creates_spec_and_plan(tmp_path):
+    """Ad hoc full tier: spec and plan both scaffolded, backlog untouched."""
+    docs = tmp_path / "docs" / "superpowers"
+    plans = docs / "plans"
+    specs = docs / "specs"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Other Task\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "PLANS_ROOT", plans),
+        mock.patch.object(board, "SPECS_ROOT", specs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_current_branch", return_value="feature/adhoc-full"),
+        mock.patch.object(board, "_today", return_value="2026-05-23"),
+        mock.patch.object(board, "_git_add") as git_add,
+    ):
+        board._cmd_start("Ad Hoc Feature", "full")
+
+    staged = git_add.call_args.args[0]
+    assert specs / "2026-05-23-ad-hoc-feature-design.md" in staged
+    assert plans / "2026-05-23-ad-hoc-feature.md" in staged
+    assert index in staged
+    assert backlog not in staged
