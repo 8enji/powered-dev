@@ -775,3 +775,99 @@ def test_prepare_clears_stale_review_dir(tmp_path, monkeypatch):
     rc2 = codex_main(["prepare", ""])
     assert rc2 == 0
     assert not stale.exists()  # prior run's leftover got wiped
+
+
+def test_finish_local_writes_report(tmp_path, monkeypatch, capsys):
+    """Simulate a successful local codex run and verify the report is written."""
+    review_dir = tmp_path / "tmp" / "codex-review-local-test"
+    review_dir.mkdir(parents=True)
+    review_id = "test-review-id"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "scripts").mkdir()
+    # Stub docs_index.py so the post-write hook doesn't fail.
+    (repo / "scripts" / "docs_index.py").write_text(
+        "import sys\nif __name__ == '__main__': sys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "local",
+        "review_id": review_id,
+        "review_root": str(repo),
+        "base_ref": "main",
+        "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
+        "schema_path": "",
+        "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "All good with one minor.",
+        "findings": [
+            {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"},
+        ],
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    report = repo / "docs" / "superpowers" / "reports" / f"codex-review-{review_id}.md"
+    assert report.exists()
+    body = report.read_text()
+    assert "All good with one minor." in body
+    assert "## [minor] a.py:1" in body
+
+
+def test_finish_local_codex_nonzero_exits_with_error(tmp_path, monkeypatch, capsys):
+    review_dir = tmp_path / "tmp" / "codex-review-local-fail"
+    review_dir.mkdir(parents=True)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "local", "review_id": "x", "review_root": str(repo),
+        "base_ref": "", "report_path": "", "schema_path": "", "focus": "",
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=1\n", encoding="utf-8")
+    (review_dir / "codex.jsonl").write_text("some error output\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "exit code 1" in err.lower() or "exit code: 1" in err.lower()
+
+
+def test_finish_local_degraded_json_writes_raw(tmp_path, monkeypatch):
+    review_dir = tmp_path / "tmp" / "codex-review-local-bad"
+    review_dir.mkdir(parents=True)
+    review_id = "bad-id"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "docs_index.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "local", "review_id": review_id, "review_root": str(repo),
+        "base_ref": "", "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
+        "schema_path": "", "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text("not json at all", encoding="utf-8")
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    report = repo / "docs" / "superpowers" / "reports" / f"codex-review-{review_id}.md"
+    body = report.read_text()
+    assert "did not produce schema-conforming JSON" in body
+    assert "not json at all" in body

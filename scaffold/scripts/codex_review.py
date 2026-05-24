@@ -679,6 +679,111 @@ def _do_prepare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_exit_status(status_text: str) -> int | None:
+    m = re.search(r"__CODEX_EXIT__=(-?\d+)", status_text)
+    return int(m.group(1)) if m else None
+
+
+def _read_review_dir() -> Path:
+    tmp_root = Path(os.environ.get("CODEX_REVIEW_TMP_ROOT", "/tmp"))
+    pointer = tmp_root / "codex-review.latest"
+    if not pointer.exists():
+        raise FileNotFoundError(f"No latest codex review pointer at {pointer}")
+    return Path(pointer.read_text(encoding="utf-8").strip())
+
+
+def _finish_local(state: dict, review_dir: Path, *, today: str) -> int:
+    """Local-mode wake handler. Writes the markdown report and stages it."""
+    repo = Path(state["review_root"])
+    report_rel = state["report_path"]
+    report_path = repo / report_rel
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    last_message = (review_dir / "last-message.json").read_text(encoding="utf-8")
+    parsed, err = validate_findings_payload(last_message)
+    if parsed is None:
+        body = (
+            "---\n"
+            "status: done\n"
+            "type: report\n"
+            f"date: {today}\n"
+            f"summary: Codex local review for {state['review_id']}\n"
+            "---\n\n"
+            f"# Codex local review {state['review_id']}\n\n"
+            "_Codex did not produce schema-conforming JSON; raw output follows._\n\n"
+            f"{last_message}\n"
+        )
+        report_path.write_text(body, encoding="utf-8")
+        _run_docs_index_and_stage(repo, report_path)
+        return 0
+
+    touched = [
+        line.strip() for line in (review_dir / "touched-files").read_text().splitlines()
+        if line.strip()
+    ]
+    kept, dropped = filter_findings(parsed["findings"], touched)
+    event = compute_event(kept)
+    body = render_local_report(
+        review_id=state["review_id"],
+        event=event,
+        dropped=dropped,
+        summary=parsed["summary"],
+        findings=kept,
+        date=today,
+    )
+    report_path.write_text(body, encoding="utf-8")
+    (review_dir / "event").write_text(event + "\n", encoding="utf-8")
+    _run_docs_index_and_stage(repo, report_path)
+    print(f"Wrote Codex local review report: {report_path}")
+    return 0
+
+
+def _run_docs_index_and_stage(repo: Path, report_path: Path) -> None:
+    """Regenerate the docs index and stage the report + index."""
+    subprocess.run(
+        ["python3", "scripts/docs_index.py", "regenerate"],
+        cwd=str(repo), capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "add", str(report_path.relative_to(repo)),
+         "docs/superpowers/INDEX.md"],
+        capture_output=True,
+    )
+
+
+def _do_finish(args: argparse.Namespace) -> int:
+    review_dir = _read_review_dir()
+    state = json.loads((review_dir / "state.json").read_text(encoding="utf-8"))
+
+    status_file = review_dir / "status"
+    if not status_file.exists():
+        print(f"Codex status file missing at {status_file}", file=sys.stderr)
+        return 1
+    exit_code = _parse_exit_status(status_file.read_text(encoding="utf-8"))
+    if exit_code is None or exit_code != 0:
+        jsonl = review_dir / "codex.jsonl"
+        tail = ""
+        if jsonl.exists():
+            lines = jsonl.read_text(encoding="utf-8").splitlines()[-30:]
+            tail = "\n".join(lines)
+        print(f"Codex exit code: {exit_code}\n{tail}", file=sys.stderr)
+        if state["mode"] == "pr":
+            invoking = Path(state.get("invoking_repo") or state["review_root"])
+            wt = state.get("worktree_path", "")
+            if wt:
+                cleanup_pr_worktree(invoking, Path(wt))
+        return 1
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if state["mode"] == "local":
+        return _finish_local(state, review_dir, today=today)
+    return _finish_pr(state, review_dir)
+
+
+def _finish_pr(state: dict, review_dir: Path) -> int:
+    raise NotImplementedError("Implemented in next task")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="codex_review")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -686,6 +791,9 @@ def main(argv: list[str] | None = None) -> int:
     p_prep = sub.add_parser("prepare", help="Prepare a codex review (PR or local).")
     p_prep.add_argument("arguments", nargs="?", default="")
     p_prep.set_defaults(func=_do_prepare)
+
+    p_fin = sub.add_parser("finish", help="Finalize a codex review after dispatch.")
+    p_fin.set_defaults(func=_do_finish)
 
     args = parser.parse_args(argv)
     return args.func(args)
