@@ -126,3 +126,17 @@ def validate_findings_payload(text: str) -> tuple[dict | None, str | None]:
         return None, "missing or non-array `findings` field"
 
     return data, None
+
+
+def filter_findings(
+    findings: list[dict], touched_files: list[str]
+) -> tuple[list[dict], int]:
+    """Drop findings whose `path` is not in the touched-files diff set.
+
+    Returns (kept_findings, dropped_count). Mirrors the previous shell `jq` filter
+    that compared each finding's path against the diff's --name-only output.
+    """
+    touched = set(touched_files)
+    kept = [f for f in findings if f.get("path") in touched]
+    dropped = len(findings) - len(kept)
+    return kept, dropped

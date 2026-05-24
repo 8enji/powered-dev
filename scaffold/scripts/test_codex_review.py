@@ -160,3 +160,40 @@ def test_validate_rejects_non_array_findings():
     parsed, err = validate_findings_payload('{"summary": "x", "findings": "oops"}')
     assert parsed is None
     assert "findings" in err
+
+
+from codex_review import filter_findings
+
+
+def test_filter_keeps_findings_in_touched_set():
+    findings = [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"},
+        {"path": "b.py", "line": 2, "side": "RIGHT", "severity": "major", "body": "y"},
+    ]
+    kept, dropped = filter_findings(findings, ["a.py", "b.py"])
+    assert len(kept) == 2
+    assert dropped == 0
+
+
+def test_filter_drops_findings_outside_touched():
+    findings = [
+        {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"},
+        {"path": "outside.py", "line": 2, "side": "RIGHT", "severity": "major", "body": "y"},
+    ]
+    kept, dropped = filter_findings(findings, ["a.py"])
+    assert len(kept) == 1
+    assert kept[0]["path"] == "a.py"
+    assert dropped == 1
+
+
+def test_filter_empty_findings():
+    kept, dropped = filter_findings([], ["a.py"])
+    assert kept == []
+    assert dropped == 0
+
+
+def test_filter_empty_touched_drops_everything():
+    findings = [{"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"}]
+    kept, dropped = filter_findings(findings, [])
+    assert kept == []
+    assert dropped == 1
