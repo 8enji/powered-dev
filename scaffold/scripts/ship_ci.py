@@ -124,17 +124,24 @@ def _gh_checks_json(pr: int, required_only: bool) -> list[dict]:
 
 def _next_action(pr: int) -> str:
     exit_code = _read_exit_code(pr)
+    mode = "all" if _is_all_mode(pr) else "required"
+
+    if exit_code is None:
+        return f"redispatch-{mode}"
+
     if exit_code == 0:
         return "done-green"
-    # Non-zero exit: disambiguate
-    mode = "all" if _is_all_mode(pr) else "required"
+
     checks_in_mode = _gh_checks_json(pr, required_only=(mode == "required"))
     classification = _classify_checks(checks_in_mode)
+
     if classification == "passing":
         return "done-green"
     if classification == "failing":
         return "done-red"
-    raise NotImplementedError(f"_next_action: classification={classification!r} not handled yet")
+    if classification == "pending":
+        return f"redispatch-{mode}"
+    raise NotImplementedError(f"_next_action: classification={classification!r} (empty) not handled yet")
 
 
 def _wipe_state(pr: int) -> None:

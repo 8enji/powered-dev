@@ -200,3 +200,35 @@ def test_next_action_done_red_when_disambig_shows_failing(gh, tmp_path: Path) ->
     gh.return_value = [{"name": "test", "state": "FAILURE"}]
     with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
         assert ship_ci._next_action(pr=123) == "done-red"
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_redispatch_required_when_status_missing(gh, tmp_path: Path) -> None:
+    # No status file written yet (watch still running, or caller forgot to dispatch)
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-required"
+    gh.assert_not_called()
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_redispatch_all_when_status_missing_and_all_mode(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.all-status").write_text("")
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-all"
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_redispatch_required_when_checks_pending(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.return_value = [{"name": "lint", "state": "IN_PROGRESS"}]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-required"
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_redispatch_all_when_checks_pending_and_all_mode(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.all-status").write_text("")
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.return_value = [{"name": "lint", "state": "IN_PROGRESS"}]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-all"
