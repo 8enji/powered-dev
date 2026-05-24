@@ -82,6 +82,23 @@ def test_codex_review_dispatches_to_python_helper():
     assert "python3 scripts/codex_review.py finish" in review
 
 
+def test_codex_review_passes_session_to_helper():
+    """The slash command must pass $PPID as the session id to both stages so
+    concurrent Claude sessions don't clobber each other's latest-pointer file."""
+    review = _read(".claude/commands/request-codex-review.md")
+
+    assert '--session "$PPID"' in review
+    # Both prepare and finish must include the session.
+    prepare_line = next(
+        l for l in review.splitlines() if "codex_review.py prepare" in l
+    )
+    finish_line = next(
+        l for l in review.splitlines() if "codex_review.py finish" in l
+    )
+    assert '--session "$PPID"' in prepare_line
+    assert '--session "$PPID"' in finish_line
+
+
 def test_codex_review_dispatch_sources_env_from_helper():
     """The slash command must source the helper-written env file so the background
     Bash call can reference CODEX_REVIEW_DIR, CODEX_REVIEW_SCHEMA, CODEX_REVIEW_ROOT."""

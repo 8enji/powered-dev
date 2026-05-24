@@ -13,10 +13,10 @@ Arguments (may be empty): `$ARGUMENTS`
 
 ## Stage 1 — Prepare
 
-Run the helper. On success it prints the per-review directory; on no-changes/no-PR it exits non-zero with a message:
+Run the helper. Pass `$PPID` as the session id so concurrent Claude sessions never clobber each other's latest-pointer file. On success it prints the per-review directory; on no-changes/no-PR it exits non-zero with a message:
 
 ```bash
-REVIEW_DIR=$(python3 scripts/codex_review.py prepare "$ARGUMENTS")
+REVIEW_DIR=$(python3 scripts/codex_review.py prepare --session "$PPID" "$ARGUMENTS")
 test -n "$REVIEW_DIR" || exit 1
 . "$REVIEW_DIR/dispatch.env"   # exports CODEX_REVIEW_DIR, CODEX_REVIEW_SCHEMA, CODEX_REVIEW_ROOT
 ```
@@ -43,11 +43,11 @@ After dispatching, end the assistant turn. The harness notifies when the backgro
 ## Stage 3 — On wake: finalize
 
 ```bash
-python3 scripts/codex_review.py finish
+python3 scripts/codex_review.py finish --session "$PPID"
 ```
 
 The helper:
-- Loads the latest review directory from `/tmp/codex-review.latest`.
+- Loads the latest review directory from `/tmp/codex-review.$PPID.latest` (per-session, set in stage 1).
 - Reads `status` to check codex's exit code; on non-zero prints the last 30 lines of `codex.jsonl` and stops.
 - Validates the JSON output. On schema violation: PR mode posts a single degraded comment; local mode writes a degraded report.
 - Filters findings against the touched-files diff, computes the event (`REQUEST_CHANGES` if any critical else `COMMENT`), assembles the report/payload.

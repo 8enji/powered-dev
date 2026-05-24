@@ -116,6 +116,15 @@ def test_latest_pointer_path(tmp_path):
     assert paths.latest_pointer == tmp_path / "codex-review.latest"
 
 
+def test_latest_pointer_path_is_namespaced_by_session(tmp_path):
+    """Concurrent Claude sessions must not clobber each other's latest-pointer file."""
+    paths_a = review_paths("pr", "123", tmp_root=tmp_path, session="11111")
+    paths_b = review_paths("pr", "456", tmp_root=tmp_path, session="22222")
+    assert paths_a.latest_pointer == tmp_path / "codex-review.11111.latest"
+    assert paths_b.latest_pointer == tmp_path / "codex-review.22222.latest"
+    assert paths_a.latest_pointer != paths_b.latest_pointer
+
+
 from codex_review import validate_findings_payload
 
 

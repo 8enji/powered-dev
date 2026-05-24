@@ -69,7 +69,13 @@ class ReviewPaths:
     event: Path
     review_root: Path           # holds the path to where codex should `cd` (PR worktree or repo root)
     dispatch_env: Path          # `key=value\n` pairs the slash command sources
-    latest_pointer: Path        # /tmp/codex-review.latest
+    latest_pointer: Path        # /tmp/codex-review[.<session>].latest
+
+
+def _latest_pointer_path(tmp_root: Path, session: str | None) -> Path:
+    if session:
+        return tmp_root / f"codex-review.{session}.latest"
+    return tmp_root / "codex-review.latest"
 
 
 def review_paths(
@@ -78,12 +84,16 @@ def review_paths(
     *,
     tmp_root: Path = Path("/tmp"),
     create: bool = False,
+    session: str | None = None,
 ) -> ReviewPaths:
     """Compute the per-review directory layout.
 
     All artifacts for one review live under `<tmp_root>/codex-review-<kind>-<key>/`.
-    The latest-pointer file lives at `<tmp_root>/codex-review.latest` and stores the
-    most recent review_dir path so the wake handler can find it without env vars.
+    The latest-pointer file lives at `<tmp_root>/codex-review.<session>.latest` (or
+    `codex-review.latest` when no session id is supplied) and stores the most recent
+    review_dir path so the wake handler can find it without env vars. The session id
+    is provided by the slash command as `$PPID` so concurrent Claude sessions never
+    clobber each other's pointers.
     """
     review_dir = tmp_root / f"codex-review-{kind}-{key}"
     if create:
@@ -99,7 +109,7 @@ def review_paths(
         event=review_dir / "event",
         review_root=review_dir / "review-root",
         dispatch_env=review_dir / "dispatch.env",
-        latest_pointer=tmp_root / "codex-review.latest",
+        latest_pointer=_latest_pointer_path(tmp_root, session),
     )
 
 
@@ -596,11 +606,12 @@ def _do_prepare_local(
     tmp_root: Path,
     prompt_source: Path,
     schema_path: Path,
+    session: str | None,
 ) -> int:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     review_id = f"{ts}-{_head_short_sha(repo)}"
     _clear_prior_dir("local", review_id, tmp_root)
-    paths = review_paths("local", review_id, tmp_root=tmp_root, create=True)
+    paths = review_paths("local", review_id, tmp_root=tmp_root, create=True, session=session)
     evidence = collect_local_evidence(repo, paths.review_dir)
     if not evidence.touched_files:
         print("No local changes found to review.", file=sys.stderr)
@@ -649,6 +660,7 @@ def _do_prepare_local(
 
 def _do_prepare(args: argparse.Namespace) -> int:
     arg_string = args.arguments or ""
+    session = args.session or None
     repo = Path.cwd()
     branch = _current_branch(repo)
     parsed = parse_arguments(arg_string, current_branch=branch)
@@ -664,20 +676,20 @@ def _do_prepare(args: argparse.Namespace) -> int:
     )
 
     if parsed.mode == "local":
-        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path)
+        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path, session)
 
     # PR mode — current-branch or explicit
     try:
         meta = resolve_pr_metadata(identifier=parsed.identifier)
     except NoPRForBranchError:
         # Invariant #1: feature branch with no PR → fall back to local mode.
-        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path)
+        return _do_prepare_local(parsed, repo, tmp_root, prompt_source, schema_path, session)
     except LookupError as e:
         print(str(e), file=sys.stderr)
         return 2
 
     _clear_prior_dir("pr", meta.pr, tmp_root)
-    paths = review_paths("pr", meta.pr, tmp_root=tmp_root, create=True)
+    paths = review_paths("pr", meta.pr, tmp_root=tmp_root, create=True, session=session)
     if parsed.mode == "pr-explicit":
         wt = paths.review_dir / "worktree"
         # Fetch the PR head and create a worktree at it.
@@ -740,9 +752,9 @@ def _parse_exit_status(status_text: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _read_review_dir() -> Path:
+def _read_review_dir(session: str | None = None) -> Path:
     tmp_root = Path(os.environ.get("CODEX_REVIEW_TMP_ROOT", "/tmp"))
-    pointer = tmp_root / "codex-review.latest"
+    pointer = _latest_pointer_path(tmp_root, session)
     if not pointer.exists():
         raise FileNotFoundError(f"No latest codex review pointer at {pointer}")
     return Path(pointer.read_text(encoding="utf-8").strip())
@@ -808,7 +820,7 @@ def _run_docs_index_and_stage(repo: Path, report_path: Path) -> None:
 
 
 def _do_finish(args: argparse.Namespace) -> int:
-    review_dir = _read_review_dir()
+    review_dir = _read_review_dir(args.session or None)
     state = json.loads((review_dir / "state.json").read_text(encoding="utf-8"))
 
     status_file = review_dir / "status"
@@ -957,9 +969,21 @@ def main(argv: list[str] | None = None) -> int:
 
     p_prep = sub.add_parser("prepare", help="Prepare a codex review (PR or local).")
     p_prep.add_argument("arguments", nargs="?", default="")
+    p_prep.add_argument(
+        "--session",
+        default="",
+        help="Opaque session id (typically $PPID) used to namespace the latest-pointer "
+             "file so concurrent Claude sessions do not clobber each other.",
+    )
     p_prep.set_defaults(func=_do_prepare)
 
     p_fin = sub.add_parser("finish", help="Finalize a codex review after dispatch.")
+    p_fin.add_argument(
+        "--session",
+        default="",
+        help="Opaque session id (typically $PPID); must match the value passed to "
+             "`prepare` so the wake handler reads the right latest-pointer.",
+    )
     p_fin.set_defaults(func=_do_finish)
 
     args = parser.parse_args(argv)
