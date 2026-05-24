@@ -170,9 +170,11 @@ def _cmd_switch_mode(pr: int, to: str) -> None:
     if to != "all":
         print(f"ship_ci: switch-mode --to only supports 'all', got {to!r}", file=sys.stderr)
         sys.exit(2)
-    _all_mode_marker_path(pr).write_text("")
+    # Clear prior state first; write the mode marker LAST so its presence
+    # implies the prior status/retries are already gone (crash-safe ordering).
     _status_path(pr).unlink(missing_ok=True)
     _retries_path(pr).unlink(missing_ok=True)
+    _all_mode_marker_path(pr).write_text("")
 
 
 def main(argv: list[str] | None = None) -> None:
