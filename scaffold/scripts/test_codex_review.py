@@ -114,3 +114,49 @@ def test_review_paths_does_not_create_by_default(tmp_path):
 def test_latest_pointer_path(tmp_path):
     paths = review_paths("pr", "123", tmp_root=tmp_path)
     assert paths.latest_pointer == tmp_path / "codex-review.latest"
+
+
+from codex_review import validate_findings_payload
+
+
+def test_validate_well_formed_payload():
+    text = '{"summary": "Looks good", "findings": []}'
+    parsed, err = validate_findings_payload(text)
+    assert err is None
+    assert parsed == {"summary": "Looks good", "findings": []}
+
+
+def test_validate_payload_with_findings():
+    text = (
+        '{"summary": "Two issues", "findings": ['
+        '{"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "x"}'
+        ']}'
+    )
+    parsed, err = validate_findings_payload(text)
+    assert err is None
+    assert len(parsed["findings"]) == 1
+
+
+def test_validate_rejects_non_json():
+    parsed, err = validate_findings_payload("not json at all")
+    assert parsed is None
+    assert err is not None
+    assert "JSON" in err
+
+
+def test_validate_rejects_missing_summary():
+    parsed, err = validate_findings_payload('{"findings": []}')
+    assert parsed is None
+    assert "summary" in err
+
+
+def test_validate_rejects_non_string_summary():
+    parsed, err = validate_findings_payload('{"summary": 42, "findings": []}')
+    assert parsed is None
+    assert "summary" in err
+
+
+def test_validate_rejects_non_array_findings():
+    parsed, err = validate_findings_payload('{"summary": "x", "findings": "oops"}')
+    assert parsed is None
+    assert "findings" in err

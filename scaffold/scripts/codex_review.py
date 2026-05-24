@@ -9,6 +9,7 @@ Pure functions are exposed for direct testing.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,3 +100,29 @@ def review_paths(
         dispatch_env=review_dir / "dispatch.env",
         latest_pointer=tmp_root / "codex-review.latest",
     )
+
+
+def validate_findings_payload(text: str) -> tuple[dict | None, str | None]:
+    """Parse and validate codex's last-message output.
+
+    Returns (parsed_dict, None) on success, or (None, error_message) on failure.
+    Failure modes mirror the previous shell `jq -e` check: not JSON, missing summary,
+    non-string summary, non-array findings.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return None, f"output is not valid JSON: {e.msg}"
+
+    if not isinstance(data, dict):
+        return None, "output must be a JSON object"
+
+    summary = data.get("summary")
+    if not isinstance(summary, str):
+        return None, "missing or non-string `summary` field"
+
+    findings = data.get("findings")
+    if not isinstance(findings, list):
+        return None, "missing or non-array `findings` field"
+
+    return data, None
