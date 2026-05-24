@@ -747,6 +747,46 @@ def test_parse_merge_branches_double_dash_separator():
     assert parse_merge_branches("git merge -- --weird-branch") == ["--weird-branch"]
 
 
+def test_parse_merge_branches_signed_default_key():
+    # `-S` takes an OPTIONAL value; bare `-S branch` means "sign with default
+    # key, merge branch". Regression: parser used to eat `feature/foo` as keyid.
+    assert parse_merge_branches("git merge -S feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_gpg_sign_long_default_key():
+    assert parse_merge_branches("git merge --gpg-sign feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_gpg_sign_equals_keyid():
+    assert parse_merge_branches("git merge --gpg-sign=KEY feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_signed_keyid_attached():
+    # `-SKEYID` (no space) is a single token that doesn't match `-S` exactly,
+    # so it falls through as a standalone flag.
+    assert parse_merge_branches("git merge -SKEYID feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_squash():
+    # Boolean flag — falls through `t.startswith('-')` with i += 1.
+    assert parse_merge_branches("git merge --squash feature/foo") == ["feature/foo"]
+
+
+def test_parse_merge_branches_abort_returns_empty():
+    # No positional branch arg; hook then fail-opens (nothing to gate).
+    assert parse_merge_branches("git merge --abort") == []
+
+
+def test_parse_merge_branches_continue_returns_empty():
+    assert parse_merge_branches("git merge --continue") == []
+
+
+def test_parse_merge_branches_keeps_dollar_var_literal():
+    # shlex.split doesn't expand $VAR; parser stays pure and returns the
+    # literal token. The CLI gate handles the fail-open with a stderr warning.
+    assert parse_merge_branches("git merge $BRANCH") == ["$BRANCH"]
+
+
 def test_parse_merge_branches_malformed_quotes():
     # Unclosed quote → shlex raises → return [] (let git surface the real error).
     assert parse_merge_branches('git merge feature/foo -m "unclosed') == []
@@ -783,6 +823,26 @@ def test_check_merge_cmd_passes_on_bare_merge(tmp_path):
     with pytest.raises(SystemExit) as exc:
         board._cmd_check_merge_cmd("git merge")
     assert exc.value.code == 0
+
+
+def test_check_merge_cmd_warns_and_passes_on_dollar_var(tmp_path, capsys):
+    import pytest
+    plans = tmp_path / "docs" / "superpowers" / "plans"
+    _make_plan(plans, "Active", "active", "feature/wip")
+    with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge $BRANCH")
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "shell expansion" in captured.err
+    assert "$BRANCH" in captured.err
+
+
+def test_check_merge_cmd_warns_on_command_substitution(tmp_path, capsys):
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        board._cmd_check_merge_cmd("git merge $(git symbolic-ref --short HEAD)")
+    assert exc.value.code == 0
+    assert "shell expansion" in capsys.readouterr().err
 
 
 def test_main_dispatches_check_merge_cmd(tmp_path, capsys):

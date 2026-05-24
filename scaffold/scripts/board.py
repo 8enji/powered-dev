@@ -275,12 +275,17 @@ def _cmd_check_merge(branch: str) -> None:
     sys.exit(rc)
 
 
-# git merge flags that take a value as a separate token.
+# git merge flags that take a REQUIRED value as a separate token.
 # `--foo=bar` form is detected separately and doesn't need to be listed here.
+#
+# Intentionally excluded: `-S` / `--gpg-sign`. These take an *optional* value
+# (`-S[<keyid>]`), so `git merge -S feature/foo` treats `feature/foo` as the
+# merge target, not the keyid. Listing them would silently eat the branch.
+# Trade-off: `git merge -S KEYID branch` would parse KEYID as a branch and
+# fail open (no plan matches KEYID) — much rarer than the optional-arg case.
 _MERGE_FLAGS_WITH_VALUE = frozenset({
     "-m", "--message",
     "-F", "--file",
-    "-S", "--gpg-sign",
     "-s", "--strategy",
     "-X", "--strategy-option",
     "--into-name",
@@ -328,6 +333,16 @@ def _cmd_check_merge_cmd(command: str) -> None:
     """
     branches = parse_merge_branches(command)
     if not branches:
+        sys.exit(0)
+    # shlex.split doesn't expand $VAR or $(...). If a branch token still
+    # contains shell-expansion syntax we can't know the real branch name —
+    # warn to stderr and fail open so the failure isn't invisible.
+    if any("$" in b or "`" in b for b in branches):
+        print(
+            f"pre_merge_gate: shell expansion in merge command ({branches}); "
+            f"cannot verify branch state, proceeding without check.",
+            file=sys.stderr,
+        )
         sys.exit(0)
     for branch in branches:
         rc, msg = check_branch_active(branch)
