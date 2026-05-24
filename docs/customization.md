@@ -21,18 +21,6 @@ cargo clippy && cargo test         # Rust
 go vet ./... && go test ./...      # Go
 ```
 
-## CLAUDE.md line budget
-
-The pre-commit hook enforces a line budget on `CLAUDE.md` (default: 50 lines). This keeps the file focused — CLAUDE.md should be a concise reference, not a novel.
-
-Override with an environment variable:
-
-```bash
-export POWERED_DEV_CLAUDE_MD_MAX_LINES=80
-```
-
-Or set it in your shell profile to make it permanent.
-
 ## Task tiers
 
 `/task-start` asks for a tier:

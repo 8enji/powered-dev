@@ -29,14 +29,4 @@ if [ -n "$STAGED_DOCS" ]; then
     fi
 fi
 
-# 4. CLAUDE.md line budget
-MAX_LINES=${POWERED_DEV_CLAUDE_MD_MAX_LINES:-50}
-if [ -f "$REPO_ROOT/CLAUDE.md" ]; then
-    LINES=$(wc -l < "$REPO_ROOT/CLAUDE.md")
-    if [ "$LINES" -gt "$MAX_LINES" ]; then
-        echo "error: CLAUDE.md exceeds ${MAX_LINES}-line budget (has ${LINES} lines)"
-        FAIL=1
-    fi
-fi
-
 exit $FAIL

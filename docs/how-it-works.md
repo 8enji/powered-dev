@@ -63,7 +63,6 @@ A shell script at `scripts/githooks/pre-commit` that runs on every `git commit`:
 - Regenerates `INDEX.md`, catching drift.
 - Lints backlog for duplicate titles.
 - Lints YAML frontmatter on staged doc files.
-- Enforces `CLAUDE.md` line budget.
 
 ### Ring 3: GitHub Actions
 
