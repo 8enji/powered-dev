@@ -352,3 +352,54 @@ def test_build_review_comments_shape():
 
 def test_build_review_comments_empty():
     assert build_review_comments([]) == []
+
+
+from codex_review import read_codex_config
+
+
+def test_codex_config_reads_quoted_values(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        'model = "gpt-5-codex"\n'
+        'model_reasoning_effort = "high"\n'
+        'other_key = "ignored"\n',
+        encoding="utf-8",
+    )
+    out = read_codex_config(cfg)
+    assert out == {"model": "gpt-5-codex", "reasoning": "high"}
+
+
+def test_codex_config_reads_unquoted_values(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "model = gpt-5\n"
+        "model_reasoning_effort = medium\n",
+        encoding="utf-8",
+    )
+    out = read_codex_config(cfg)
+    assert out == {"model": "gpt-5", "reasoning": "medium"}
+
+
+def test_codex_config_missing_file_returns_defaults(tmp_path):
+    out = read_codex_config(tmp_path / "nonexistent.toml")
+    assert out == {"model": "default", "reasoning": "default"}
+
+
+def test_codex_config_missing_keys_use_defaults(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('model = "gpt-5"\n', encoding="utf-8")
+    out = read_codex_config(cfg)
+    assert out == {"model": "gpt-5", "reasoning": "default"}
+
+
+def test_codex_config_takes_first_match(tmp_path):
+    """If a key appears twice (e.g. inside a [profile] section), take the first occurrence."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        'model = "first"\n'
+        "[profiles.alt]\n"
+        'model = "second"\n',
+        encoding="utf-8",
+    )
+    out = read_codex_config(cfg)
+    assert out["model"] == "first"

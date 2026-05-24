@@ -242,3 +242,34 @@ def build_review_comments(findings: list[dict]) -> list[dict]:
         }
         for f in findings
     ]
+
+
+_CONFIG_LINE_RE = re.compile(r'^([a-zA-Z_]+)\s*=\s*"?([^"]+?)"?\s*$')
+
+
+def read_codex_config(path: Path) -> dict[str, str]:
+    """Read `model` and `model_reasoning_effort` from ~/.codex/config.toml.
+
+    Mirrors the previous shell `grep -E '...' | sed -E '...'` pipeline. Takes the
+    first occurrence of each key so values inside `[profile.*]` sections don't
+    shadow the top-level defaults. Missing file or keys → 'default'.
+    """
+    result = {"model": "default", "reasoning": "default"}
+    if not path.exists():
+        return result
+    seen: set[str] = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("["):
+            continue
+        m = _CONFIG_LINE_RE.match(line)
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2).strip()
+        if key == "model" and "model" not in seen:
+            result["model"] = val
+            seen.add("model")
+        elif key == "model_reasoning_effort" and "reasoning" not in seen:
+            result["reasoning"] = val
+            seen.add("reasoning")
+    return result
