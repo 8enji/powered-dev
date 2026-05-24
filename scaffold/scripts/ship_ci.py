@@ -166,6 +166,15 @@ def _cmd_next_action(pr: int) -> None:
     print(_next_action(pr))
 
 
+def _cmd_switch_mode(pr: int, to: str) -> None:
+    if to != "all":
+        print(f"ship_ci: switch-mode --to only supports 'all', got {to!r}", file=sys.stderr)
+        sys.exit(2)
+    _all_mode_marker_path(pr).write_text("")
+    _status_path(pr).unlink(missing_ok=True)
+    _retries_path(pr).unlink(missing_ok=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Ship CI watch helper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -176,11 +185,17 @@ def main(argv: list[str] | None = None) -> None:
     next_p = sub.add_parser("next-action", help="Classify the next ship action from CI state")
     next_p.add_argument("--pr", type=int, required=True)
 
+    switch_p = sub.add_parser("switch-mode", help="Switch ship watch mode (required → all)")
+    switch_p.add_argument("--pr", type=int, required=True)
+    switch_p.add_argument("--to", required=True, choices=["all"])
+
     args = parser.parse_args(argv)
     if args.command == "start":
         _cmd_start(args.pr)
     elif args.command == "next-action":
         _cmd_next_action(args.pr)
+    elif args.command == "switch-mode":
+        _cmd_switch_mode(args.pr, args.to)
 
 
 if __name__ == "__main__":

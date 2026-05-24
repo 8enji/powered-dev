@@ -286,3 +286,26 @@ def test_next_action_retries_exhausted_all_mode(gh, tmp_path: Path) -> None:
         assert ship_ci._read_retries(pr=123) == 5
     # Only one gh call: all-mode never consults non-required fallback
     assert gh.call_count == 1
+
+
+def test_switch_mode_to_all_creates_marker(tmp_path: Path) -> None:
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        ship_ci._cmd_switch_mode(pr=123, to="all")
+    assert (tmp_path / "ship-123.all-status").exists()
+
+
+def test_switch_mode_to_all_clears_previous_status(tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    (tmp_path / "ship-123.retries").write_text("3\n")
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        ship_ci._cmd_switch_mode(pr=123, to="all")
+    assert not (tmp_path / "ship-123.status").exists()
+    # Retries reset so the timing-race counter starts fresh in all-mode
+    assert not (tmp_path / "ship-123.retries").exists()
+
+
+def test_switch_mode_invalid_target_raises(tmp_path: Path) -> None:
+    import pytest
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        with pytest.raises(SystemExit):
+            ship_ci._cmd_switch_mode(pr=123, to="bogus")
