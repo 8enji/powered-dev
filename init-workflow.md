@@ -108,6 +108,26 @@ For each file below, check if it already exists in the target project. If it doe
 
 Create all necessary parent directories with `mkdir -p` before copying. Use `cp` for each file.
 
+### `.gitignore` (merge, not prompt)
+
+`.gitignore` needs different handling than the table above because (a) most projects already have one and (b) merging line-by-line is safe and non-destructive. Do not prompt the user.
+
+- If the destination has no `.gitignore` → copy `$STAGING/.gitignore` to `$REPO_ROOT/.gitignore`.
+- If the destination already has one → append any scaffold lines that are not already present (exact-match dedup, ignoring blank lines). Do not reorder or rewrite existing entries.
+
+```bash
+SRC="$STAGING/.gitignore"
+DEST="$REPO_ROOT/.gitignore"
+if [ ! -f "$DEST" ]; then
+    cp "$SRC" "$DEST"
+else
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        grep -qxF -- "$line" "$DEST" || printf '%s\n' "$line" >> "$DEST"
+    done < "$SRC"
+fi
+```
+
 ## Step 4 — Configure templates
 
 ### 4a. Render CLAUDE.md
@@ -214,6 +234,7 @@ Installed:
   docs/board/backlog.md
   docs/superpowers/ directory tree
   CLAUDE.md [created|updated]
+  .gitignore [created|merged]
   Git pre-commit hook [installed|appended|skipped]
 
 Next steps:
