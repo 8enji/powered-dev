@@ -40,6 +40,17 @@ Three independent checks. The agent can bypass one in a moment of cleverness; it
 
 ## Install
 
+In Claude Code, paste this into a git repo where you want the workflow installed:
+
+```
+Set up the powered-dev workflow in this repo. The instructions are at https://raw.githubusercontent.com/8enji/powered-dev/main/init-workflow.md — fetch them and follow them through.
+```
+
+Claude fetches the bootstrap file, asks for a project description and a gate command (e.g., `make all`, `npm run lint && npm test`, `ruff check . && pytest`), wires up the hooks, installs the scaffold, and cleans up after itself.
+
+<details>
+<summary>Prefer to install via shell?</summary>
+
 One-time, from any git repo:
 
 ```bash
@@ -54,7 +65,7 @@ Then, in Claude Code:
 /init-workflow
 ```
 
-`/init-workflow` asks for a project description and a gate command (e.g., `make all`, `npm run lint && npm test`, `ruff check . && pytest`), wires up the hooks, installs the scaffold, and removes itself.
+</details>
 
 ## Requirements
 
