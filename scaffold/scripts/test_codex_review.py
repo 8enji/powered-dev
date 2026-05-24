@@ -403,3 +403,61 @@ def test_codex_config_takes_first_match(tmp_path):
     )
     out = read_codex_config(cfg)
     assert out["model"] == "first"
+
+
+from codex_review import render_prompt
+
+
+def test_render_prompt_pr_mode(tmp_path):
+    source = tmp_path / "review-prompt.md"
+    source.write_text("## Static prompt\n\nReview the diff.\n", encoding="utf-8")
+    rendered = render_prompt(
+        mode="pr",
+        metadata={
+            "Title": "Add auth",
+            "Base": "origin/main",
+            "Head SHA": "abc123",
+            "Focus (from invoker, may be empty)": "",
+        },
+        prompt_source=source,
+    )
+    assert rendered.startswith("## PR metadata")
+    assert "- Title: Add auth" in rendered
+    assert "- Base: origin/main" in rendered
+    assert "- Head SHA: abc123" in rendered
+    assert "- Focus (from invoker, may be empty): " in rendered
+    assert "## Static prompt" in rendered
+    assert "Review the diff." in rendered
+
+
+def test_render_prompt_local_mode(tmp_path):
+    source = tmp_path / "review-prompt.md"
+    source.write_text("Static body.\n", encoding="utf-8")
+    rendered = render_prompt(
+        mode="local",
+        metadata={
+            "Review ID": "rid-123",
+            "Base ref": "origin/main",
+            "Head SHA": "abc",
+            "Focus (from invoker, may be empty)": "auth code",
+            "Touched files": "a.py\nb.py",
+            "Diffs available on disk": (
+                "- Staged diff: /tmp/codex-review-local-rid-123/staged.diff\n"
+                "- Unstaged diff: /tmp/codex-review-local-rid-123/unstaged.diff"
+            ),
+        },
+        prompt_source=source,
+    )
+    assert rendered.startswith("## Local review metadata")
+    assert "- Review ID: rid-123" in rendered
+    assert "- Focus (from invoker, may be empty): auth code" in rendered
+    assert "## Touched files\na.py\nb.py" in rendered
+    assert "## Diffs available on disk" in rendered
+    assert "Static body." in rendered
+
+
+def test_render_prompt_with_no_metadata_still_includes_source(tmp_path):
+    source = tmp_path / "review-prompt.md"
+    source.write_text("Body only.\n", encoding="utf-8")
+    rendered = render_prompt(mode="pr", metadata={}, prompt_source=source)
+    assert "Body only." in rendered

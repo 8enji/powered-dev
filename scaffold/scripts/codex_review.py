@@ -273,3 +273,32 @@ def read_codex_config(path: Path) -> dict[str, str]:
             result["reasoning"] = val
             seen.add("reasoning")
     return result
+
+
+_METADATA_BLOCK_KEYS = {"Touched files", "Diffs available on disk"}
+
+
+def render_prompt(
+    *,
+    mode: Literal["pr", "local"],
+    metadata: dict[str, str],
+    prompt_source: Path,
+) -> str:
+    """Build the rendered codex prompt: metadata header + static source body.
+
+    `metadata` keys ending up as `## <key>` block headers (e.g. 'Touched files')
+    are rendered as section blocks; everything else is a `- key: value` bullet.
+    """
+    heading = "## PR metadata" if mode == "pr" else "## Local review metadata"
+    bullets: list[str] = []
+    blocks: list[tuple[str, str]] = []
+    for k, v in metadata.items():
+        if k in _METADATA_BLOCK_KEYS:
+            blocks.append((k, v))
+        else:
+            bullets.append(f"- {k}: {v}")
+    parts = [heading, *bullets]
+    for title, body in blocks:
+        parts.extend(["", f"## {title}", body])
+    parts.extend(["", prompt_source.read_text(encoding="utf-8")])
+    return "\n".join(parts)
