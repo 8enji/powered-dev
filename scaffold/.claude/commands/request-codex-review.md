@@ -107,7 +107,7 @@ Local-change mode reviews changes that have not been opened as a PR yet. It supp
      --arg event_path "$EVENT_PATH" \
      '{mode:$mode, review_id:$review_id, review_root:$review_root, base_ref:$base_ref, report_path:$report_path, report_tmp_path:$report_tmp_path, prompt_path:$prompt_path, prompt_source:$prompt_source, schema_path:$schema_path, status_path:$status_path, jsonl_path:$jsonl_path, last_message_path:$last_message_path, touched_files_path:$touched_files_path, event_path:$event_path}' \
      > "$STATE"
-   printf '%s\n' "$STATE" > /tmp/codex-local-review.latest-state
+   printf '%s\n' "$STATE" > "/tmp/codex-local-review.$PPID.latest-state"
    ```
 
 ### Stage L2 — Dispatch Codex Locally
@@ -150,9 +150,9 @@ Local-change mode reviews changes that have not been opened as a PR yet. It supp
 
 ### Stage L3 — On Wake: Write Local Report
 
-1. Load persisted state. If the current assistant turn does not know `REVIEW_ID`, read the state path from `/tmp/codex-local-review.latest-state`:
+1. Load persisted state. If the current assistant turn does not know `REVIEW_ID`, read the state path from `/tmp/codex-local-review.$PPID.latest-state`:
    ```bash
-   STATE=${STATE:-$(cat /tmp/codex-local-review.latest-state)}
+   STATE=${STATE:-$(cat "/tmp/codex-local-review.$PPID.latest-state")}
    MODE=$(jq -r '.mode' "$STATE")
    REVIEW_ID=$(jq -r '.review_id' "$STATE")
    REVIEW_ROOT=$(jq -r '.review_root' "$STATE")
@@ -323,7 +323,7 @@ PR mode preserves the original behavior: run Codex against a pull request and po
      --arg review_stderr_path "$REVIEW_STDERR_PATH" \
      '{mode:$mode, pr:$pr, pr_url:$pr_url, owner:$owner, repo:$repo, base:$base, title:$title, head_sha:$head_sha, review_root:$review_root, worktree_path:$worktree_path, prompt_path:$prompt_path, prompt_source:$prompt_source, schema_path:$schema_path, status_path:$status_path, jsonl_path:$jsonl_path, last_message_path:$last_message_path, touched_files_path:$touched_files_path, touched_files_json_path:$touched_files_json_path, event_path:$event_path, review_payload_path:$review_payload_path, review_payload_body_only_path:$review_payload_body_only_path, review_response_path:$review_response_path, review_stderr_path:$review_stderr_path}' \
      > "$STATE"
-   printf '%s\n' "$STATE" > /tmp/codex-review.latest-state
+   printf '%s\n' "$STATE" > "/tmp/codex-review.$PPID.latest-state"
    ```
 
 ## Stage 2 — Dispatch Codex in background
@@ -362,10 +362,10 @@ PR mode preserves the original behavior: run Codex against a pull request and po
 
 ## Stage 3 — On wake: parse findings
 
-1. Load persisted state. If the current assistant turn does not know `PR`, read the state path from `/tmp/codex-review.latest-state`:
+1. Load persisted state. If the current assistant turn does not know `PR`, read the state path from `/tmp/codex-review.$PPID.latest-state`:
    ```bash
    if [ -z "${STATE:-}" ]; then
-     STATE=$(cat /tmp/codex-review.latest-state)
+     STATE=$(cat "/tmp/codex-review.$PPID.latest-state")
    fi
    MODE=$(jq -r '.mode' "$STATE")
    PR=$(jq -r '.pr' "$STATE")
