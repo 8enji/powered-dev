@@ -273,3 +273,16 @@ def test_next_action_retries_exhausted(gh, tmp_path: Path) -> None:
         assert ship_ci._next_action(pr=123) == "retries-exhausted"
         # Counter not bumped further
         assert ship_ci._read_retries(pr=123) == 5
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_retries_exhausted_all_mode(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.all-status").write_text("")
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    (tmp_path / "ship-123.retries").write_text("5\n")
+    gh.return_value = []  # all-mode disambig empty → would normally retry, but already at cap
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "retries-exhausted"
+        assert ship_ci._read_retries(pr=123) == 5
+    # Only one gh call: all-mode never consults non-required fallback
+    assert gh.call_count == 1
