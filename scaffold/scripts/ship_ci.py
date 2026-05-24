@@ -122,6 +122,21 @@ def _gh_checks_json(pr: int, required_only: bool) -> list[dict]:
     return parsed
 
 
+def _next_action(pr: int) -> str:
+    exit_code = _read_exit_code(pr)
+    if exit_code == 0:
+        return "done-green"
+    # Non-zero exit: disambiguate
+    mode = "all" if _is_all_mode(pr) else "required"
+    checks_in_mode = _gh_checks_json(pr, required_only=(mode == "required"))
+    classification = _classify_checks(checks_in_mode)
+    if classification == "passing":
+        return "done-green"
+    if classification == "failing":
+        return "done-red"
+    raise NotImplementedError(f"_next_action: classification={classification!r} not handled yet")
+
+
 def _wipe_state(pr: int) -> None:
     for path in (_status_path(pr), _retries_path(pr), _all_mode_marker_path(pr)):
         path.unlink(missing_ok=True)

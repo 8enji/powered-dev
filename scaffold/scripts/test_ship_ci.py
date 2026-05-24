@@ -176,3 +176,27 @@ def test_gh_checks_json_returns_empty_on_timeout() -> None:
         run.side_effect = ship_ci.subprocess.TimeoutExpired(cmd=["gh"], timeout=30)
         result = ship_ci._gh_checks_json(pr=123, required_only=True)
     assert result == []
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_done_green_when_exit_zero(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=0\n")
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "done-green"
+    gh.assert_not_called()
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_done_green_when_disambig_shows_passing(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.return_value = [{"name": "lint", "state": "SUCCESS"}]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "done-green"
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_done_red_when_disambig_shows_failing(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.return_value = [{"name": "test", "state": "FAILURE"}]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "done-red"
