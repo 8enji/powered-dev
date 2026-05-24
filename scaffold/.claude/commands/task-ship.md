@@ -133,9 +133,9 @@ For `ask-non-required` follow-up:
 
 1. Capture branch: `BRANCH=$(git rev-parse --abbrev-ref HEAD)`.
 2. Check merge readiness: `STATUS=$(gh pr view $PR --json mergeStateStatus --jq '.mergeStateStatus')`. Handle CLEAN/BEHIND/DIRTY/BLOCKED/UNKNOWN.
-3. Optional follow-up: if `.claude/commands/request-codex-review.md` exists and the user wants an automated Codex review, tell them to run `/request-codex-review $PR` as a separate command before merging.
-4. Ask user: "CI green on PR #<n>. Merge now?" Options:
+3. Ask user: "CI green on PR #<n>. Merge now?" Options (include **Request Codex review** only if `.claude/commands/request-codex-review.md` exists):
    - **Merge (squash)** — `gh pr merge $PR --squash --delete-branch`. Print PR URL, merge SHA, branch deleted.
+   - **Request Codex review** — invoke `/request-codex-review $PR`. The review runs asynchronously; rerun `/task-ship` when it finishes to return to this prompt.
    - **Don't merge yet** — print URL, stop.
    - **Open in browser** — `gh pr view $PR --web`, stop.
 

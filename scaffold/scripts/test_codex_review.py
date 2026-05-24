@@ -255,6 +255,25 @@ def test_histogram_empty_findings():
     assert severity_histogram([]) == "0 critical · 0 major · 0 minor · 0 nit"
 
 
+from codex_review import format_findings_line
+
+
+def test_format_findings_line_none_is_unparseable():
+    assert format_findings_line(None).startswith("Findings: unparseable")
+
+
+def test_format_findings_line_empty_is_no_findings():
+    assert format_findings_line([]) == "No findings."
+
+
+def test_format_findings_line_with_findings_includes_histogram():
+    findings = [
+        {"severity": "critical"} | {"path": "a", "line": 1, "side": "RIGHT", "body": "x"},
+        {"severity": "nit"}      | {"path": "a", "line": 2, "side": "RIGHT", "body": "y"},
+    ]
+    assert format_findings_line(findings) == "Findings: 1 critical · 0 major · 0 minor · 1 nit"
+
+
 from codex_review import render_local_report
 
 
@@ -985,6 +1004,41 @@ def test_finish_local_writes_report(tmp_path, monkeypatch, capsys):
     body = report.read_text()
     assert "All good with one minor." in body
     assert "## [minor] a.py:1" in body
+    out = capsys.readouterr().out
+    assert "Findings: 0 critical · 0 major · 1 minor · 0 nit" in out
+
+
+def test_finish_local_no_findings_prints_no_findings(tmp_path, monkeypatch, capsys):
+    """A successful run with an empty findings array prints `No findings.`."""
+    review_dir = tmp_path / "tmp" / "codex-review-local-empty"
+    review_dir.mkdir(parents=True)
+    review_id = "empty-id"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "docs_index.py").write_text(
+        "import sys\nsys.exit(0)\n", encoding="utf-8"
+    )
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "local", "review_id": review_id, "review_root": str(repo),
+        "base_ref": "main",
+        "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
+        "schema_path": "", "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "Clean.", "findings": [],
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "No findings." in out
 
 
 def test_finish_local_codex_nonzero_exits_with_error(tmp_path, monkeypatch, capsys):
@@ -1038,7 +1092,7 @@ def test_finish_local_degraded_json_writes_raw(tmp_path, monkeypatch):
     assert "not json at all" in body
 
 
-def test_finish_pr_submits_review(tmp_path, monkeypatch):
+def test_finish_pr_submits_review(tmp_path, monkeypatch, capsys):
     review_dir = tmp_path / "tmp" / "codex-review-pr-42"
     review_dir.mkdir(parents=True)
     repo = tmp_path / "repo"
@@ -1080,6 +1134,8 @@ def test_finish_pr_submits_review(tmp_path, monkeypatch):
     assert captured["payload"]["commit_id"] == "abc123"
     assert len(captured["payload"]["comments"]) == 1
     assert captured["payload"]["comments"][0]["body"].startswith("**[major]**")
+    out = capsys.readouterr().out
+    assert "Findings: 0 critical · 1 major · 0 minor · 0 nit" in out
 
 
 def test_finish_pr_critical_triggers_request_changes(tmp_path, monkeypatch):

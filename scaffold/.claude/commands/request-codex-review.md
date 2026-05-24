@@ -54,6 +54,16 @@ The helper:
 - PR mode: POSTs the review via `gh api`. On 422 with comments-validation failure, retries body-only.
 - Local mode: writes `docs/superpowers/reports/codex-review-<id>.md`, runs `python3 scripts/docs_index.py regenerate`, stages the report + INDEX.
 - Cleans up the PR worktree (if any).
+- Ends with a single summary line: `No findings.`, `Findings: <histogram>`, or `Findings: unparseable ...`.
+
+## Stage 4 — Offer follow-up debugging
+
+Inspect the helper's final stdout line:
+
+- `No findings.` → done. Stop.
+- `Findings: ...` (any variant, including `unparseable`) → use `AskUserQuestion` to offer `/systematic-debugging`. Compose the question text from what was printed (e.g. "Codex flagged 1 critical · 0 major · 0 minor · 1 nit. Run /systematic-debugging?"). Options:
+  - **Run /systematic-debugging** — invoke the `superpowers:systematic-debugging` skill, passing the local report path (local mode) or PR URL (PR mode) plus the histogram as the bug context.
+  - **Skip** — print the report path / PR URL and stop.
 
 ## Edge cases
 
