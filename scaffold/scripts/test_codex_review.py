@@ -871,3 +871,133 @@ def test_finish_local_degraded_json_writes_raw(tmp_path, monkeypatch):
     body = report.read_text()
     assert "did not produce schema-conforming JSON" in body
     assert "not json at all" in body
+
+
+def test_finish_pr_submits_review(tmp_path, monkeypatch):
+    review_dir = tmp_path / "tmp" / "codex-review-pr-42"
+    review_dir.mkdir(parents=True)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "pr", "pr": "42",
+        "pr_url": "https://github.com/o/r/pull/42",
+        "owner": "o", "repo": "r", "base": "main",
+        "head_sha": "abc123", "title": "T",
+        "review_root": str(repo), "worktree_path": "",
+        "invoking_repo": str(repo), "schema_path": "", "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "Looks fine.",
+        "findings": [
+            {"path": "a.py", "line": 3, "side": "RIGHT", "severity": "major", "body": "fix me"},
+        ],
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    captured = {}
+    def fake_runner(cmd):
+        if cmd[:3] == ["gh", "api", "-X"]:
+            input_idx = cmd.index("--input") + 1
+            captured["payload"] = json.loads(Path(cmd[input_idx]).read_text())
+            return (json.dumps({"html_url": "https://github.com/o/r/pull/42#review-1"}), 0)
+        return ("", 0)
+
+    monkeypatch.setattr("codex_review._default_runner", fake_runner)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    assert captured["payload"]["event"] == "COMMENT"
+    assert "Looks fine." in captured["payload"]["body"]
+    assert captured["payload"]["commit_id"] == "abc123"
+    assert len(captured["payload"]["comments"]) == 1
+    assert captured["payload"]["comments"][0]["body"].startswith("**[major]**")
+
+
+def test_finish_pr_critical_triggers_request_changes(tmp_path, monkeypatch):
+    review_dir = tmp_path / "tmp" / "codex-review-pr-43"
+    review_dir.mkdir(parents=True)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "pr", "pr": "43",
+        "pr_url": "https://github.com/o/r/pull/43",
+        "owner": "o", "repo": "r", "base": "main",
+        "head_sha": "abc", "title": "T",
+        "review_root": str(repo), "worktree_path": "",
+        "invoking_repo": str(repo), "schema_path": "", "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "Critical issue.",
+        "findings": [
+            {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "critical", "body": "boom"},
+        ],
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    captured = {}
+    def fake_runner(cmd):
+        if cmd[:3] == ["gh", "api", "-X"]:
+            input_idx = cmd.index("--input") + 1
+            captured["payload"] = json.loads(Path(cmd[input_idx]).read_text())
+            return (json.dumps({"html_url": "u"}), 0)
+        return ("", 0)
+    monkeypatch.setattr("codex_review._default_runner", fake_runner)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    assert captured["payload"]["event"] == "REQUEST_CHANGES"
+
+
+def test_finish_pr_422_retries_body_only(tmp_path, monkeypatch):
+    review_dir = tmp_path / "tmp" / "codex-review-pr-44"
+    review_dir.mkdir(parents=True)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (review_dir / "state.json").write_text(json.dumps({
+        "mode": "pr", "pr": "44",
+        "pr_url": "u", "owner": "o", "repo": "r", "base": "main",
+        "head_sha": "abc", "title": "T",
+        "review_root": str(repo), "worktree_path": "",
+        "invoking_repo": str(repo), "schema_path": "", "focus": "",
+    }))
+    (review_dir / "touched-files").write_text("a.py\n", encoding="utf-8")
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "x",
+        "findings": [
+            {"path": "a.py", "line": 1, "side": "RIGHT", "severity": "minor", "body": "y"},
+        ],
+    }))
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+    (tmp_path / "tmp" / "codex-review.latest").write_text(str(review_dir), encoding="utf-8")
+
+    calls = []
+    def fake_runner(cmd):
+        if cmd[:3] == ["gh", "api", "-X"]:
+            input_idx = cmd.index("--input") + 1
+            payload = json.loads(Path(cmd[input_idx]).read_text())
+            calls.append(payload)
+            if len(calls) == 1:
+                # First attempt: simulate gh writing to stderr separately.
+                err_path = review_dir / "review-stderr"
+                err_path.write_text("HTTP 422: Unprocessable Entity (comments)", encoding="utf-8")
+                return ("", 1)
+            return (json.dumps({"html_url": "u"}), 0)
+        return ("", 0)
+    monkeypatch.setattr("codex_review._default_runner", fake_runner)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    rc = codex_main(["finish"])
+    assert rc == 0
+    assert len(calls) == 2
+    # Second call must be body-only with event=COMMENT.
+    assert calls[1]["comments"] == []
+    assert calls[1]["event"] == "COMMENT"

@@ -780,8 +780,110 @@ def _do_finish(args: argparse.Namespace) -> int:
     return _finish_pr(state, review_dir)
 
 
+_CODEX_CONFIG_PATH = Path.home() / ".codex" / "config.toml"
+
+
+def _stderr_indicates_comments_422(stderr_text: str) -> bool:
+    lower = stderr_text.lower()
+    return "unprocessable entity" in lower or (
+        "comments" in lower and "422" in lower
+    )
+
+
 def _finish_pr(state: dict, review_dir: Path) -> int:
-    raise NotImplementedError("Implemented in next task")
+    """PR-mode wake handler: assemble + POST gh review, retry body-only on 422."""
+    last_message = (review_dir / "last-message.json").read_text(encoding="utf-8")
+    parsed, err = validate_findings_payload(last_message)
+
+    invoking_repo = Path(state.get("invoking_repo") or state["review_root"])
+    worktree_path = state.get("worktree_path", "")
+
+    if parsed is None:
+        banner = (
+            "## Codex review (degraded)\n\n"
+            "_Codex did not produce schema-conforming JSON; "
+            "posting raw output as a single comment._\n"
+        )
+        comment_body = f"{banner}\n{last_message}"
+        body_file = review_dir / "degraded-comment.md"
+        body_file.write_text(comment_body, encoding="utf-8")
+        _default_runner([
+            "gh", "-R", f"{state['owner']}/{state['repo']}",
+            "pr", "comment", state["pr"], "--body-file", str(body_file),
+        ])
+        if worktree_path:
+            cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+        return 0
+
+    touched = [
+        line.strip() for line in (review_dir / "touched-files").read_text().splitlines()
+        if line.strip()
+    ]
+    kept, dropped = filter_findings(parsed["findings"], touched)
+    event = compute_event(kept)
+    cfg = read_codex_config(_CODEX_CONFIG_PATH)
+    histogram = severity_histogram(kept)
+    body = render_pr_review_body(
+        model=cfg["model"], reasoning=cfg["reasoning"],
+        summary=parsed["summary"], histogram=histogram, dropped=dropped,
+    )
+    comments = build_review_comments(kept)
+
+    payload = {
+        "event": event, "body": body, "commit_id": state["head_sha"], "comments": comments,
+    }
+    payload_path = review_dir / "review-payload.json"
+    payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    (review_dir / "event").write_text(event + "\n", encoding="utf-8")
+
+    out, rc = _default_runner([
+        "gh", "api", "-X", "POST",
+        f"/repos/{state['owner']}/{state['repo']}/pulls/{state['pr']}/reviews",
+        "--input", str(payload_path),
+    ])
+
+    if rc == 0:
+        try:
+            url = json.loads(out).get("html_url", "")
+        except json.JSONDecodeError:
+            url = ""
+        print(f"Posted Codex review ({event}) on PR #{state['pr']}: {url}")
+        if worktree_path:
+            cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+        return 0
+
+    stderr_file = review_dir / "review-stderr"
+    stderr_text = stderr_file.read_text(encoding="utf-8") if stderr_file.exists() else ""
+    if _stderr_indicates_comments_422(stderr_text):
+        body_only = {**payload, "event": "COMMENT", "comments": []}
+        body_only_path = review_dir / "review-payload.body-only.json"
+        body_only_path.write_text(json.dumps(body_only, indent=2), encoding="utf-8")
+        out2, rc2 = _default_runner([
+            "gh", "api", "-X", "POST",
+            f"/repos/{state['owner']}/{state['repo']}/pulls/{state['pr']}/reviews",
+            "--input", str(body_only_path),
+        ])
+        if rc2 == 0:
+            try:
+                url = json.loads(out2).get("html_url", "")
+            except json.JSONDecodeError:
+                url = ""
+            print(
+                f"Posted Codex review ({event}, body-only after inline validation failure) "
+                f"on PR #{state['pr']}: {url}"
+            )
+            if worktree_path:
+                cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+            return 0
+        print(f"gh review POST retry failed: rc={rc2}", file=sys.stderr)
+        if worktree_path:
+            cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+        return 1
+
+    print(f"gh review POST failed: rc={rc} stderr={stderr_text}", file=sys.stderr)
+    if worktree_path:
+        cleanup_pr_worktree(invoking_repo, Path(worktree_path))
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
