@@ -515,3 +515,181 @@ def collect_pr_touched_files(repo: Path, base: str, review_dir: Path) -> list[st
     touched = sorted({line.strip() for line in out.splitlines() if line.strip()})
     (review_dir / "touched-files").write_text("\n".join(touched) + ("\n" if touched else ""), encoding="utf-8")
     return touched
+
+
+import argparse
+import os
+import sys
+from datetime import datetime, timezone
+
+
+def _current_branch(repo: Path) -> str:
+    out = _run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+    return out or "HEAD"
+
+
+def _head_short_sha(repo: Path) -> str:
+    return _run_git(repo, ["rev-parse", "--short", "HEAD"]).strip() or "nogit"
+
+
+def _resolve_paths(env_var: str, default: Path) -> Path:
+    return Path(os.environ.get(env_var, str(default)))
+
+
+def _clear_prior_dir(kind: str, key: str, tmp_root: Path) -> None:
+    """Wipe a prior review directory so its files don't leak into the new run.
+
+    Preserves invariant #9: forensic files survive only until the next run for
+    the same (kind, key) pair. New runs see a clean slate.
+    """
+    prior = tmp_root / f"codex-review-{kind}-{key}"
+    if prior.exists():
+        subprocess.run(["rm", "-rf", str(prior)], check=False)
+
+
+def _do_prepare(args: argparse.Namespace) -> int:
+    arg_string = args.arguments or ""
+    repo = Path.cwd()
+    branch = _current_branch(repo)
+    parsed = parse_arguments(arg_string, current_branch=branch)
+
+    tmp_root = Path(os.environ.get("CODEX_REVIEW_TMP_ROOT", "/tmp"))
+    prompt_source = _resolve_paths(
+        "CODEX_REVIEW_PROMPT_SOURCE",
+        repo / ".claude" / "codex" / "review-prompt.md",
+    )
+    schema_path = _resolve_paths(
+        "CODEX_REVIEW_SCHEMA_PATH",
+        repo / ".claude" / "codex" / "review-findings.schema.json",
+    )
+
+    if parsed.mode == "local":
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        review_id = f"{ts}-{_head_short_sha(repo)}"
+        _clear_prior_dir("local", review_id, tmp_root)
+        paths = review_paths("local", review_id, tmp_root=tmp_root, create=True)
+        evidence = collect_local_evidence(repo, paths.review_dir)
+        if not evidence.touched_files:
+            print("No local changes found to review.", file=sys.stderr)
+            return 2
+        paths.touched_files.write_text(
+            "\n".join(evidence.touched_files) + "\n", encoding="utf-8"
+        )
+        prompt_text = render_prompt(
+            mode="local",
+            metadata={
+                "Review ID": review_id,
+                "Base ref": evidence.base_ref or "none",
+                "Head SHA": _run_git(repo, ["rev-parse", "HEAD"]).strip() or "unknown",
+                "Focus (from invoker, may be empty)": parsed.focus,
+                "Touched files": "\n".join(evidence.touched_files),
+                "Diffs available on disk": (
+                    f"- Staged diff: {paths.review_dir / 'staged.diff'}\n"
+                    f"- Unstaged diff: {paths.review_dir / 'unstaged.diff'}\n"
+                    f"- Committed diff: {paths.review_dir / 'committed.diff'}"
+                ),
+            },
+            prompt_source=prompt_source,
+        )
+        paths.prompt.write_text(prompt_text, encoding="utf-8")
+        paths.review_root.write_text(str(repo) + "\n", encoding="utf-8")
+        state = {
+            "mode": "local",
+            "review_id": review_id,
+            "review_root": str(repo),
+            "base_ref": evidence.base_ref,
+            "report_path": f"docs/superpowers/reports/codex-review-{review_id}.md",
+            "schema_path": str(schema_path),
+            "focus": parsed.focus,
+        }
+        paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        paths.dispatch_env.write_text(
+            f"CODEX_REVIEW_DIR={paths.review_dir}\n"
+            f"CODEX_REVIEW_SCHEMA={schema_path}\n"
+            f"CODEX_REVIEW_ROOT={repo}\n",
+            encoding="utf-8",
+        )
+        paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
+        print(str(paths.review_dir))
+        return 0
+
+    # PR mode — current-branch or explicit
+    try:
+        meta = resolve_pr_metadata(identifier=parsed.identifier)
+    except LookupError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+
+    _clear_prior_dir("pr", meta.pr, tmp_root)
+    paths = review_paths("pr", meta.pr, tmp_root=tmp_root, create=True)
+    if parsed.mode == "pr-explicit":
+        wt = paths.review_dir / "worktree"
+        # Fetch the PR head and create a worktree at it.
+        subprocess.run(
+            ["git", "-C", str(repo), "fetch", "origin",
+             f"pull/{meta.pr}/head:refs/remotes/origin/pr-{meta.pr}-head"],
+            capture_output=True, check=False,
+        )
+        setup_pr_worktree(repo, wt, f"refs/remotes/origin/pr-{meta.pr}-head")
+        review_root = wt
+    else:
+        review_root = repo
+
+    touched = collect_pr_touched_files(review_root, meta.base, paths.review_dir)
+    if not touched:
+        print(f"PR #{meta.pr} has no file changes; nothing to review.", file=sys.stderr)
+        return 2
+
+    prompt_text = render_prompt(
+        mode="pr",
+        metadata={
+            "Title": meta.title,
+            "Base": f"origin/{meta.base}",
+            "Head SHA": meta.head_sha,
+            "Focus (from invoker, may be empty)": parsed.focus,
+        },
+        prompt_source=prompt_source,
+    )
+    paths.prompt.write_text(prompt_text, encoding="utf-8")
+    paths.review_root.write_text(str(review_root) + "\n", encoding="utf-8")
+    state = {
+        "mode": "pr",
+        "pr": meta.pr,
+        "pr_url": meta.pr_url,
+        "owner": meta.owner,
+        "repo": meta.repo,
+        "base": meta.base,
+        "head_sha": meta.head_sha,
+        "title": meta.title,
+        "review_root": str(review_root),
+        "worktree_path": str(paths.review_dir / "worktree") if parsed.mode == "pr-explicit" else "",
+        "invoking_repo": str(repo),
+        "schema_path": str(schema_path),
+        "focus": parsed.focus,
+    }
+    paths.state.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    paths.dispatch_env.write_text(
+        f"CODEX_REVIEW_DIR={paths.review_dir}\n"
+        f"CODEX_REVIEW_SCHEMA={schema_path}\n"
+        f"CODEX_REVIEW_ROOT={review_root}\n",
+        encoding="utf-8",
+    )
+    paths.latest_pointer.write_text(str(paths.review_dir) + "\n", encoding="utf-8")
+    print(str(paths.review_dir))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="codex_review")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_prep = sub.add_parser("prepare", help="Prepare a codex review (PR or local).")
+    p_prep.add_argument("arguments", nargs="?", default="")
+    p_prep.set_defaults(func=_do_prepare)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

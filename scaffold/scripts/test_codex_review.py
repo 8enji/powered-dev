@@ -683,3 +683,95 @@ def test_collect_pr_touched_files(tmp_path):
     touched = collect_pr_touched_files(repo, "main", review_dir)
     assert "added.py" in touched
     assert (review_dir / "touched-files").read_text().strip() == "added.py"
+
+
+import os
+import sys
+from codex_review import main as codex_main
+
+
+def test_prepare_local_mode_writes_state_and_prompt(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.py").write_text("x\n")
+    # Provide minimal prompt source + schema so prepare can resolve them.
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    rc = codex_main(["prepare", ""])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    review_dir = Path(out)
+    assert review_dir.is_dir()
+    assert (review_dir / "state.json").exists()
+    assert (review_dir / "prompt.txt").exists()
+    state = json.loads((review_dir / "state.json").read_text())
+    assert state["mode"] == "local"
+    latest = (tmp_path / "tmp" / "codex-review.latest").read_text().strip()
+    assert latest == str(review_dir)
+
+
+def test_prepare_local_exits_nonzero_on_no_changes(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    rc = codex_main(["prepare", ""])
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "No local changes" in err
+
+
+def test_prepare_clears_stale_review_dir(tmp_path, monkeypatch):
+    """A stale file from a prior run for the same key must not leak into the new run."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.py").write_text("x\n")
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    # Freeze the timestamp so the review_id is deterministic across both calls.
+    from datetime import datetime, timezone
+    fixed = datetime(2026, 5, 24, 12, 0, 0, tzinfo=timezone.utc)
+
+    class _FixedDT:
+        @staticmethod
+        def now(tz=None):
+            return fixed
+
+    monkeypatch.setattr("codex_review.datetime", _FixedDT)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    rc = codex_main(["prepare", ""])
+    assert rc == 0
+    review_dir = Path((tmp_path / "tmp" / "codex-review.latest").read_text().strip())
+    stale = review_dir / "stale-file"
+    stale.write_text("old data", encoding="utf-8")
+    assert stale.exists()
+
+    rc2 = codex_main(["prepare", ""])
+    assert rc2 == 0
+    assert not stale.exists()  # prior run's leftover got wiped
