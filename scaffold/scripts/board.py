@@ -384,6 +384,16 @@ def _find_active_plan_for_branch(branch: str) -> tuple[Path, dict[str, Any]] | N
     return None
 
 
+def _find_done_plans_for_branch(branch: str) -> list[tuple[Path, dict[str, Any]]]:
+    """Return all plans whose branch matches and whose status is `done`."""
+    all_plans = _collect_plans(PLANS_ROOT)
+    return [
+        (path, fm)
+        for path, fm in all_plans
+        if fm.get("branch") == branch and fm.get("status") == "done"
+    ]
+
+
 def _other_active_plans_reference_spec(plan_to_exclude: Path, spec_name: str) -> bool:
     """Check if any other active plan references the given spec."""
     all_plans = _collect_plans(PLANS_ROOT)

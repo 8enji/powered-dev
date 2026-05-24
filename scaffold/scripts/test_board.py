@@ -325,3 +325,44 @@ def test_append_related_list_preserves_other_related_keys(tmp_path):
     text = p.read_text()
     assert "  spec: foo-design.md" in text
     assert "  prs: [42]" in text
+
+
+def test_find_done_plans_for_branch_returns_single_match(tmp_path):
+    """One done plan on the branch — returned in a single-element list."""
+    plans = tmp_path / "plans"
+    plan = _make_plan(plans, "Done Task", "done", "feature/x")
+    with mock.patch.object(board, "PLANS_ROOT", plans):
+        result = board._find_done_plans_for_branch("feature/x")
+    assert len(result) == 1
+    assert result[0][0] == plan
+    assert result[0][1].get("status") == "done"
+
+
+def test_find_done_plans_for_branch_returns_empty_when_only_active(tmp_path):
+    """Active plan on the branch — _find_done_plans_for_branch returns []."""
+    plans = tmp_path / "plans"
+    _make_plan(plans, "Active Task", "active", "feature/x")
+    with mock.patch.object(board, "PLANS_ROOT", plans):
+        result = board._find_done_plans_for_branch("feature/x")
+    assert result == []
+
+
+def test_find_done_plans_for_branch_returns_multiple_matches(tmp_path):
+    """Two done plans on the branch — both returned (caller handles ambiguity)."""
+    plans = tmp_path / "plans"
+    _make_plan(plans, "First", "done", "feature/x")
+    _make_plan(plans, "Second", "done", "feature/x")
+    with mock.patch.object(board, "PLANS_ROOT", plans):
+        result = board._find_done_plans_for_branch("feature/x")
+    assert len(result) == 2
+
+
+def test_find_done_plans_for_branch_ignores_other_branches(tmp_path):
+    """A done plan on a different branch is not returned."""
+    plans = tmp_path / "plans"
+    _make_plan(plans, "On X", "done", "feature/x")
+    _make_plan(plans, "On Y", "done", "feature/y")
+    with mock.patch.object(board, "PLANS_ROOT", plans):
+        result = board._find_done_plans_for_branch("feature/x")
+    assert len(result) == 1
+    assert result[0][1].get("summary") == "On X"
