@@ -74,45 +74,66 @@ def test_ship_uses_default_branch_for_new_pr_summary():
     assert 'gh pr create --base "$BASE"' in ship
 
 
-def test_codex_review_persists_event_for_callers():
+def test_codex_review_dispatches_to_python_helper():
+    """The slash command must delegate to the codex_review.py helper for both stages."""
     review = _read(".claude/commands/request-codex-review.md")
 
-    assert '"/tmp/codex-review-$PR".{status,jsonl,last-message,prompt,touched-files,touched-files.json,review-payload.json,review-payload.body-only.json,review-response.json,review-stderr,event}' in review
-    assert 'EVENT_PATH="/tmp/codex-review-$PR.event"' in review
-    assert 'echo "$EVENT" > "$EVENT_PATH"' in review
+    assert "python3 scripts/codex_review.py prepare" in review
+    assert "python3 scripts/codex_review.py finish" in review
 
 
-def test_codex_review_persists_wake_state():
+def test_codex_review_dispatch_sources_env_from_helper():
+    """The slash command must source the helper-written env file so the background
+    Bash call can reference CODEX_REVIEW_DIR, CODEX_REVIEW_SCHEMA, CODEX_REVIEW_ROOT."""
     review = _read(".claude/commands/request-codex-review.md")
 
-    assert "/tmp/codex-review-$PR.state.json" in review
-    assert "/tmp/codex-local-review-$REVIEW_ID.state.json" in review
-    assert 'MODE=$(jq -r \'.mode\'' in review
-    assert 'REVIEW_ROOT=$(jq -r \'.review_root\'' in review
-    assert 'OWNER=$(jq -r \'.owner\'' in review
-    assert 'REPORT=$(jq -r \'.report_path\'' in review
+    assert "dispatch.env" in review
+    assert "CODEX_REVIEW_DIR" in review
+    assert "CODEX_REVIEW_SCHEMA" in review
+    assert "CODEX_REVIEW_ROOT" in review
 
 
-def test_codex_review_empty_args_do_not_hide_gh_failures():
+def test_codex_review_keeps_background_codex_dispatch_in_slash_command():
+    """The codex exec call must remain inline in the slash command (must run as a
+    Bash tool call from the assistant turn so the harness wakes on completion)."""
     review = _read(".claude/commands/request-codex-review.md")
 
-    assert "Known no-PR case" in review
-    assert "Do not fall back to local-change mode" in review
-    assert "Auth, network, rate limit, missing `gh`, or malformed output" in review
+    assert "/Applications/Codex.app/Contents/Resources/codex exec" in review
+    assert "--output-schema" in review
+    assert "--output-last-message" in review
+    assert "--sandbox read-only" in review
+    assert "run_in_background" in review
+    assert "__CODEX_EXIT__" in review
+
+
+def test_codex_review_documents_edge_cases():
+    """The edge-cases section must stay documented in the slash command even after
+    the bash logic moves into the Python helper."""
+    review = _read(".claude/commands/request-codex-review.md")
+
+    assert "Branch protection" in review
+    assert "force-pushed" in review
+    assert "FOCUS" in review
+    assert "shell metacharacters" in review
 
 
 def test_request_codex_review_supports_local_changes():
+    """Local-change mode behavior is now implemented in codex_review.py; the slash
+    command must document that local mode is supported and the prompt source must
+    still describe both review modes."""
     review = _read(".claude/commands/request-codex-review.md")
     prompt = _read(".claude/codex/review-prompt.md")
+    helper = _read("scripts/codex_review.py")
 
-    assert "Local-change mode" in review
-    assert "git diff --cached" in review
-    assert "git diff --no-ext-diff" in review
-    assert "git ls-files --others --exclude-standard" in review
-    assert "/tmp/codex-local-review-$REVIEW_ID.report.md" in review
-    assert "docs/superpowers/reports/codex-review-$REVIEW_ID.md" in review
+    assert "local" in review.lower()
+    assert "docs/superpowers/reports/codex-review-" in review
     assert "python3 scripts/docs_index.py regenerate" in review
-    assert 'git add "$REPORT" docs/superpowers/INDEX.md' in review
+
+    # Behavioral coverage lives in the helper now. The helper invokes git via
+    # argv-style lists (subprocess), not shell strings.
+    assert '"diff", "--cached"' in helper
+    assert '"ls-files", "--others", "--exclude-standard"' in helper
+
     assert "pull request or local change set" in prompt
     assert "Use the metadata above to identify the review type" in prompt
 
