@@ -34,6 +34,40 @@ def _all_mode_marker_path(pr: int) -> Path:
     return TMP_DIR / f"ship-{pr}.all-status"
 
 
+def _read_exit_code(pr: int) -> int | None:
+    """Parse `__SHIP_EXIT__=<n>` from the status file. None if missing or malformed."""
+    path = _status_path(pr)
+    if not path.exists():
+        return None
+    for line in path.read_text().splitlines():
+        if line.startswith("__SHIP_EXIT__="):
+            try:
+                return int(line.split("=", 1)[1])
+            except ValueError:
+                return None
+    return None
+
+
+def _is_all_mode(pr: int) -> bool:
+    return _all_mode_marker_path(pr).exists()
+
+
+def _read_retries(pr: int) -> int:
+    path = _retries_path(pr)
+    if not path.exists():
+        return 0
+    try:
+        return int(path.read_text().strip())
+    except ValueError:
+        return 0
+
+
+def _bump_retries(pr: int) -> int:
+    new = _read_retries(pr) + 1
+    _retries_path(pr).write_text(f"{new}\n")
+    return new
+
+
 def _wipe_state(pr: int) -> None:
     for path in (_status_path(pr), _retries_path(pr), _all_mode_marker_path(pr)):
         path.unlink(missing_ok=True)
