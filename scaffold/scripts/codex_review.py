@@ -37,8 +37,9 @@ def parse_arguments(arg_string: str, current_branch: str) -> ParsedArgs:
             return ParsedArgs(mode="local", identifier=None, focus="")
         return ParsedArgs(mode="pr-current", identifier=None, focus="")
 
-    first, _, rest = stripped.partition(" ")
-    focus = rest.strip()
+    parts = stripped.split(None, 1)
+    first = parts[0]
+    focus = parts[1].strip() if len(parts) > 1 else ""
 
     if first in ("local", "--local"):
         return ParsedArgs(mode="local", identifier=None, focus=focus)

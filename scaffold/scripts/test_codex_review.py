@@ -71,3 +71,11 @@ def test_parse_focus_carries_through_pr_mode():
     assert parsed.mode == "pr-explicit"
     assert parsed.identifier == "1234"
     assert parsed.focus == "focus on the migration"
+
+
+def test_parse_tab_separated_args_splits_correctly():
+    """Whitespace separator includes tab — matches the slash-command contract."""
+    parsed = parse_arguments("1234\tfocus on auth", current_branch="main")
+    assert parsed.mode == "pr-explicit"
+    assert parsed.identifier == "1234"
+    assert parsed.focus == "focus on auth"
