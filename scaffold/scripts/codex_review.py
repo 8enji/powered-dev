@@ -379,7 +379,7 @@ def collect_local_evidence(repo_root: Path, review_dir: Path) -> LocalEvidence:
 
 from typing import Callable
 
-CommandRunner = Callable[[list[str]], tuple[str, int]]
+CommandRunner = Callable[[list[str]], tuple[str, str, int]]
 
 
 @dataclass(frozen=True)
@@ -393,9 +393,9 @@ class PRMetadata:
     title: str
 
 
-def _default_runner(cmd: list[str]) -> tuple[str, int]:
+def _default_runner(cmd: list[str]) -> tuple[str, str, int]:
     res = subprocess.run(cmd, capture_output=True, text=True)
-    return (res.stdout, res.returncode)
+    return (res.stdout, res.stderr, res.returncode)
 
 
 _PR_FIELDS = "number,url,headRefOid,baseRefName,headRefName,isCrossRepository,title"
@@ -426,11 +426,11 @@ def resolve_pr_metadata(
     Raises LookupError if `gh pr view` reports no PR.
     """
     if identifier is None:
-        out, rc = runner(["gh", "pr", "view", "--json", _PR_FIELDS])
+        out, _, rc = runner(["gh", "pr", "view", "--json", _PR_FIELDS])
         if rc != 0:
             raise LookupError("No open PR for the current branch.")
         pr_data = json.loads(out)
-        out2, rc2 = runner(["gh", "repo", "view", "--json", "owner,name"])
+        out2, _, rc2 = runner(["gh", "repo", "view", "--json", "owner,name"])
         if rc2 != 0:
             raise LookupError("Could not resolve current repository.")
         repo_data = json.loads(out2)
@@ -440,20 +440,20 @@ def resolve_pr_metadata(
         parts = _split_identifier(identifier)
         if parts is not None:
             owner, repo, pr_number = parts
-            out, rc = runner(
+            out, _, rc = runner(
                 ["gh", "pr", "view", pr_number, "-R", f"{owner}/{repo}", "--json", _PR_FIELDS]
             )
             if rc != 0:
                 raise LookupError(f"PR {identifier} not found.")
             pr_data = json.loads(out)
         elif identifier.isdigit():
-            out, rc = runner(["gh", "repo", "view", "--json", "owner,name"])
+            out, _, rc = runner(["gh", "repo", "view", "--json", "owner,name"])
             if rc != 0:
                 raise LookupError("Could not resolve current repository.")
             repo_data = json.loads(out)
             owner = repo_data["owner"]["login"]
             repo = repo_data["name"]
-            out2, rc2 = runner(
+            out2, _, rc2 = runner(
                 ["gh", "pr", "view", identifier, "-R", f"{owner}/{repo}", "--json", _PR_FIELDS]
             )
             if rc2 != 0:
@@ -807,10 +807,15 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
         comment_body = f"{banner}\n{last_message}"
         body_file = review_dir / "degraded-comment.md"
         body_file.write_text(comment_body, encoding="utf-8")
-        _default_runner([
+        _out, _err, _rc = _default_runner([
             "gh", "-R", f"{state['owner']}/{state['repo']}",
             "pr", "comment", state["pr"], "--body-file", str(body_file),
         ])
+        if _rc != 0:
+            print(
+                f"Warning: degraded gh pr comment failed for PR #{state['pr']} (rc={_rc}): {_err}",
+                file=sys.stderr,
+            )
         if worktree_path:
             cleanup_pr_worktree(invoking_repo, Path(worktree_path))
         return 0
@@ -836,7 +841,7 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
     payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     (review_dir / "event").write_text(event + "\n", encoding="utf-8")
 
-    out, rc = _default_runner([
+    out, stderr_text, rc = _default_runner([
         "gh", "api", "-X", "POST",
         f"/repos/{state['owner']}/{state['repo']}/pulls/{state['pr']}/reviews",
         "--input", str(payload_path),
@@ -852,13 +857,11 @@ def _finish_pr(state: dict, review_dir: Path) -> int:
             cleanup_pr_worktree(invoking_repo, Path(worktree_path))
         return 0
 
-    stderr_file = review_dir / "review-stderr"
-    stderr_text = stderr_file.read_text(encoding="utf-8") if stderr_file.exists() else ""
     if _stderr_indicates_comments_422(stderr_text):
         body_only = {**payload, "event": "COMMENT", "comments": []}
         body_only_path = review_dir / "review-payload.body-only.json"
         body_only_path.write_text(json.dumps(body_only, indent=2), encoding="utf-8")
-        out2, rc2 = _default_runner([
+        out2, stderr2, rc2 = _default_runner([
             "gh", "api", "-X", "POST",
             f"/repos/{state['owner']}/{state['repo']}/pulls/{state['pr']}/reviews",
             "--input", str(body_only_path),

@@ -542,9 +542,16 @@ from codex_review import resolve_pr_metadata, PRMetadata
 
 
 class _FakeRunner:
-    """Records calls and returns canned (stdout, exit_code) per cmd list."""
+    """Records calls and returns canned (stdout, stderr, exit_code) per cmd list."""
     def __init__(self, responses):
-        self.responses = responses
+        # responses: list of (pattern_list, (stdout, stderr, exit_code))
+        # or for backward compat: (pattern_list, (stdout, exit_code)) — promote to ("", stderr=...)
+        self.responses = []
+        for pattern, response in responses:
+            if len(response) == 2:
+                self.responses.append((pattern, (response[0], "", response[1])))
+            else:
+                self.responses.append((pattern, response))
         self.calls = []
 
     def __call__(self, cmd):
@@ -552,7 +559,7 @@ class _FakeRunner:
         for pattern, response in self.responses:
             if all(p in cmd for p in pattern):
                 return response
-        return ("", 1)
+        return ("", "", 1)
 
 
 def test_resolve_pr_current_branch_success():
@@ -902,8 +909,8 @@ def test_finish_pr_submits_review(tmp_path, monkeypatch):
         if cmd[:3] == ["gh", "api", "-X"]:
             input_idx = cmd.index("--input") + 1
             captured["payload"] = json.loads(Path(cmd[input_idx]).read_text())
-            return (json.dumps({"html_url": "https://github.com/o/r/pull/42#review-1"}), 0)
-        return ("", 0)
+            return (json.dumps({"html_url": "https://github.com/o/r/pull/42#review-1"}), "", 0)
+        return ("", "", 0)
 
     monkeypatch.setattr("codex_review._default_runner", fake_runner)
     monkeypatch.chdir(repo)
@@ -946,8 +953,8 @@ def test_finish_pr_critical_triggers_request_changes(tmp_path, monkeypatch):
         if cmd[:3] == ["gh", "api", "-X"]:
             input_idx = cmd.index("--input") + 1
             captured["payload"] = json.loads(Path(cmd[input_idx]).read_text())
-            return (json.dumps({"html_url": "u"}), 0)
-        return ("", 0)
+            return (json.dumps({"html_url": "u"}), "", 0)
+        return ("", "", 0)
     monkeypatch.setattr("codex_review._default_runner", fake_runner)
     monkeypatch.chdir(repo)
     monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
@@ -986,12 +993,10 @@ def test_finish_pr_422_retries_body_only(tmp_path, monkeypatch):
             payload = json.loads(Path(cmd[input_idx]).read_text())
             calls.append(payload)
             if len(calls) == 1:
-                # First attempt: simulate gh writing to stderr separately.
-                err_path = review_dir / "review-stderr"
-                err_path.write_text("HTTP 422: Unprocessable Entity (comments)", encoding="utf-8")
-                return ("", 1)
-            return (json.dumps({"html_url": "u"}), 0)
-        return ("", 0)
+                # First attempt: simulate gh emitting a 422 to stderr.
+                return ("", "HTTP 422: Unprocessable Entity (comments)", 1)
+            return (json.dumps({"html_url": "u"}), "", 0)
+        return ("", "", 0)
     monkeypatch.setattr("codex_review._default_runner", fake_runner)
     monkeypatch.chdir(repo)
     monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
