@@ -1,6 +1,8 @@
 """Tests for the codex_review helper."""
+from pathlib import Path
+
 import pytest
-from codex_review import parse_arguments, ParsedArgs
+from codex_review import parse_arguments, ParsedArgs, review_paths, ReviewPaths
 
 
 def test_parse_empty_on_main_is_local():
@@ -79,3 +81,36 @@ def test_parse_tab_separated_args_splits_correctly():
     assert parsed.mode == "pr-explicit"
     assert parsed.identifier == "1234"
     assert parsed.focus == "focus on auth"
+
+
+def test_review_paths_pr_layout(tmp_path):
+    paths = review_paths("pr", "123", tmp_root=tmp_path)
+    assert paths.review_dir == tmp_path / "codex-review-pr-123"
+    assert paths.state == paths.review_dir / "state.json"
+    assert paths.prompt == paths.review_dir / "prompt.txt"
+    assert paths.status == paths.review_dir / "status"
+    assert paths.jsonl == paths.review_dir / "codex.jsonl"
+    assert paths.last_message == paths.review_dir / "last-message.json"
+    assert paths.touched_files == paths.review_dir / "touched-files"
+    assert paths.event == paths.review_dir / "event"
+
+
+def test_review_paths_local_layout(tmp_path):
+    paths = review_paths("local", "20260524T120000Z-abc1234", tmp_root=tmp_path)
+    assert paths.review_dir == tmp_path / "codex-review-local-20260524T120000Z-abc1234"
+    assert paths.state == paths.review_dir / "state.json"
+
+
+def test_review_paths_creates_directory(tmp_path):
+    paths = review_paths("pr", "456", tmp_root=tmp_path, create=True)
+    assert paths.review_dir.is_dir()
+
+
+def test_review_paths_does_not_create_by_default(tmp_path):
+    paths = review_paths("pr", "789", tmp_root=tmp_path)
+    assert not paths.review_dir.exists()
+
+
+def test_latest_pointer_path(tmp_path):
+    paths = review_paths("pr", "123", tmp_root=tmp_path)
+    assert paths.latest_pointer == tmp_path / "codex-review.latest"

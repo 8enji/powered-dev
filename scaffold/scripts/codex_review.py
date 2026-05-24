@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 
@@ -52,3 +53,49 @@ def parse_arguments(arg_string: str, current_branch: str) -> ParsedArgs:
 
     # Non-PR token with no PR shape — treat the whole string as a local focus prompt.
     return ParsedArgs(mode="local", identifier=None, focus=stripped)
+
+
+@dataclass(frozen=True)
+class ReviewPaths:
+    review_dir: Path
+    state: Path
+    prompt: Path
+    status: Path
+    jsonl: Path
+    last_message: Path
+    touched_files: Path
+    event: Path
+    review_root: Path           # holds the path to where codex should `cd` (PR worktree or repo root)
+    dispatch_env: Path          # `key=value\n` pairs the slash command sources
+    latest_pointer: Path        # /tmp/codex-review.latest
+
+
+def review_paths(
+    kind: Literal["pr", "local"],
+    key: str,
+    *,
+    tmp_root: Path = Path("/tmp"),
+    create: bool = False,
+) -> ReviewPaths:
+    """Compute the per-review directory layout.
+
+    All artifacts for one review live under `<tmp_root>/codex-review-<kind>-<key>/`.
+    The latest-pointer file lives at `<tmp_root>/codex-review.latest` and stores the
+    most recent review_dir path so the wake handler can find it without env vars.
+    """
+    review_dir = tmp_root / f"codex-review-{kind}-{key}"
+    if create:
+        review_dir.mkdir(parents=True, exist_ok=True)
+    return ReviewPaths(
+        review_dir=review_dir,
+        state=review_dir / "state.json",
+        prompt=review_dir / "prompt.txt",
+        status=review_dir / "status",
+        jsonl=review_dir / "codex.jsonl",
+        last_message=review_dir / "last-message.json",
+        touched_files=review_dir / "touched-files",
+        event=review_dir / "event",
+        review_root=review_dir / "review-root",
+        dispatch_env=review_dir / "dispatch.env",
+        latest_pointer=tmp_root / "codex-review.latest",
+    )
