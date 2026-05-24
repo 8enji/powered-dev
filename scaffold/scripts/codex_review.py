@@ -375,3 +375,99 @@ def collect_local_evidence(repo_root: Path, review_dir: Path) -> LocalEvidence:
             if line.strip():
                 touched.add(line.strip())
     return LocalEvidence(touched_files=sorted(touched), base_ref=base_ref)
+
+
+from typing import Callable
+
+CommandRunner = Callable[[list[str]], tuple[str, int]]
+
+
+@dataclass(frozen=True)
+class PRMetadata:
+    pr: str
+    pr_url: str
+    owner: str
+    repo: str
+    base: str
+    head_sha: str
+    title: str
+
+
+def _default_runner(cmd: list[str]) -> tuple[str, int]:
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    return (res.stdout, res.returncode)
+
+
+_PR_FIELDS = "number,url,headRefOid,baseRefName,headRefName,isCrossRepository,title"
+
+
+def _split_identifier(identifier: str) -> tuple[str, str, str] | None:
+    """Return (owner, repo, pr) for `owner/repo#N` or GitHub URL; None otherwise."""
+    m = re.match(r"^([^/\s]+)/([^/\s#]+)#(\d+)$", identifier)
+    if m:
+        return m.group(1), m.group(2), m.group(3)
+    m = re.match(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", identifier)
+    if m:
+        return m.group(1), m.group(2), m.group(3)
+    return None
+
+
+def resolve_pr_metadata(
+    *,
+    identifier: str | None,
+    runner: CommandRunner = _default_runner,
+) -> PRMetadata:
+    """Resolve PR metadata via `gh`.
+
+    identifier=None → current-branch mode (`gh pr view` with no args).
+    identifier numeric → use current repo's owner/name (gh repo view).
+    identifier `owner/repo#N` or URL → extract directly.
+
+    Raises LookupError if `gh pr view` reports no PR.
+    """
+    if identifier is None:
+        out, rc = runner(["gh", "pr", "view", "--json", _PR_FIELDS])
+        if rc != 0:
+            raise LookupError("No open PR for the current branch.")
+        pr_data = json.loads(out)
+        out2, rc2 = runner(["gh", "repo", "view", "--json", "owner,name"])
+        if rc2 != 0:
+            raise LookupError("Could not resolve current repository.")
+        repo_data = json.loads(out2)
+        owner = repo_data["owner"]["login"]
+        repo = repo_data["name"]
+    else:
+        parts = _split_identifier(identifier)
+        if parts is not None:
+            owner, repo, pr_number = parts
+            out, rc = runner(
+                ["gh", "pr", "view", pr_number, "-R", f"{owner}/{repo}", "--json", _PR_FIELDS]
+            )
+            if rc != 0:
+                raise LookupError(f"PR {identifier} not found.")
+            pr_data = json.loads(out)
+        elif identifier.isdigit():
+            out, rc = runner(["gh", "repo", "view", "--json", "owner,name"])
+            if rc != 0:
+                raise LookupError("Could not resolve current repository.")
+            repo_data = json.loads(out)
+            owner = repo_data["owner"]["login"]
+            repo = repo_data["name"]
+            out2, rc2 = runner(
+                ["gh", "pr", "view", identifier, "-R", f"{owner}/{repo}", "--json", _PR_FIELDS]
+            )
+            if rc2 != 0:
+                raise LookupError(f"PR #{identifier} not found.")
+            pr_data = json.loads(out2)
+        else:
+            raise ValueError(f"Unrecognized PR identifier: {identifier!r}")
+
+    return PRMetadata(
+        pr=str(pr_data["number"]),
+        pr_url=pr_data["url"],
+        owner=owner,
+        repo=repo,
+        base=pr_data["baseRefName"],
+        head_sha=pr_data["headRefOid"],
+        title=pr_data["title"],
+    )

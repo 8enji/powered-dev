@@ -535,3 +535,113 @@ def test_collect_local_evidence_includes_committed_branch_changes(tmp_path):
     ev = collect_local_evidence(repo, review_dir)
     assert "branch.py" in ev.touched_files
     assert (review_dir / "committed.diff").read_text().strip() != ""
+
+
+import json
+from codex_review import resolve_pr_metadata, PRMetadata
+
+
+class _FakeRunner:
+    """Records calls and returns canned (stdout, exit_code) per cmd list."""
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
+
+    def __call__(self, cmd):
+        self.calls.append(cmd)
+        for pattern, response in self.responses:
+            if all(p in cmd for p in pattern):
+                return response
+        return ("", 1)
+
+
+def test_resolve_pr_current_branch_success():
+    pr_json = {
+        "number": 42,
+        "url": "https://github.com/o/r/pull/42",
+        "headRefOid": "abc",
+        "baseRefName": "main",
+        "headRefName": "feature",
+        "isCrossRepository": False,
+        "title": "Add thing",
+    }
+    repo_json = {"owner": {"login": "anthropics"}, "name": "powered-dev"}
+    runner = _FakeRunner([
+        (["gh", "pr", "view"], (json.dumps(pr_json), 0)),
+        (["gh", "repo", "view"], (json.dumps(repo_json), 0)),
+    ])
+    meta = resolve_pr_metadata(identifier=None, runner=runner)
+    assert isinstance(meta, PRMetadata)
+    assert meta.pr == "42"
+    assert meta.owner == "anthropics"
+    assert meta.repo == "powered-dev"
+    assert meta.base == "main"
+    assert meta.head_sha == "abc"
+    assert meta.title == "Add thing"
+
+
+def test_resolve_pr_explicit_numeric():
+    pr_json = {
+        "number": 1234,
+        "url": "https://github.com/o/r/pull/1234",
+        "headRefOid": "deadbeef",
+        "baseRefName": "main",
+        "headRefName": "topic",
+        "isCrossRepository": False,
+        "title": "x",
+    }
+    repo_json = {"owner": {"login": "o"}, "name": "r"}
+    runner = _FakeRunner([
+        (["gh", "repo", "view"], (json.dumps(repo_json), 0)),
+        (["gh", "pr", "view", "1234"], (json.dumps(pr_json), 0)),
+    ])
+    meta = resolve_pr_metadata(identifier="1234", runner=runner)
+    assert meta.pr == "1234"
+    assert meta.head_sha == "deadbeef"
+
+
+def test_resolve_pr_explicit_url_extracts_owner_repo_pr():
+    pr_json = {
+        "number": 99,
+        "url": "https://github.com/foo/bar/pull/99",
+        "headRefOid": "f00",
+        "baseRefName": "main",
+        "headRefName": "x",
+        "isCrossRepository": False,
+        "title": "t",
+    }
+    runner = _FakeRunner([
+        (["gh", "pr", "view", "99", "-R", "foo/bar"], (json.dumps(pr_json), 0)),
+    ])
+    meta = resolve_pr_metadata(
+        identifier="https://github.com/foo/bar/pull/99",
+        runner=runner,
+    )
+    assert meta.owner == "foo"
+    assert meta.repo == "bar"
+    assert meta.pr == "99"
+
+
+def test_resolve_pr_owner_repo_hash_form():
+    pr_json = {
+        "number": 7,
+        "url": "https://github.com/o/r/pull/7",
+        "headRefOid": "abc",
+        "baseRefName": "main",
+        "headRefName": "x",
+        "isCrossRepository": False,
+        "title": "t",
+    }
+    runner = _FakeRunner([
+        (["gh", "pr", "view", "7", "-R", "o/r"], (json.dumps(pr_json), 0)),
+    ])
+    meta = resolve_pr_metadata(identifier="o/r#7", runner=runner)
+    assert meta.owner == "o"
+    assert meta.repo == "r"
+    assert meta.pr == "7"
+
+
+def test_resolve_pr_no_pr_on_current_branch_raises():
+    runner = _FakeRunner([(["gh", "pr", "view"], ("", 1))])
+    with pytest.raises(LookupError):
+        resolve_pr_metadata(identifier=None, runner=runner)
