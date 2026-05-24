@@ -453,8 +453,14 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("lint-backlog", help="Check backlog for duplicate entries")
 
-    start_p = sub.add_parser("start", help="Move a backlog entry into an active plan")
-    start_p.add_argument("title", help="Exact title of the backlog entry")
+    start_p = sub.add_parser(
+        "start",
+        help="Start a task: scaffold stubs from a backlog entry or an ad hoc title",
+    )
+    start_p.add_argument(
+        "title",
+        help="Task title (matches a backlog entry if present, otherwise creates an ad hoc task)",
+    )
     start_p.add_argument(
         "--tier",
         choices=["lite", "full"],
