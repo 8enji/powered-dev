@@ -232,3 +232,44 @@ def test_next_action_redispatch_all_when_checks_pending_and_all_mode(gh, tmp_pat
     gh.return_value = [{"name": "lint", "state": "IN_PROGRESS"}]
     with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
         assert ship_ci._next_action(pr=123) == "redispatch-all"
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_ask_non_required_when_no_required_but_others_exist(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    # First call (required_only=True) returns empty; second call (required_only=False) returns checks.
+    gh.side_effect = [[], [{"name": "non-req", "state": "IN_PROGRESS"}]]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "ask-non-required"
+    assert gh.call_count == 2
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_timing_race_required_bumps_retries(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.side_effect = [[], []]  # required empty, all empty → timing race
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-required-after-15s"
+        assert ship_ci._read_retries(pr=123) == 1
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_timing_race_all_mode_skips_ask_branch(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.all-status").write_text("")
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    gh.return_value = []  # all-mode disambig empty → timing race directly
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "redispatch-all-after-15s"
+    # Only one gh call: all-mode never consults the "any non-required?" fallback
+    assert gh.call_count == 1
+
+
+@mock.patch.object(ship_ci, "_gh_checks_json")
+def test_next_action_retries_exhausted(gh, tmp_path: Path) -> None:
+    (tmp_path / "ship-123.status").write_text("__SHIP_EXIT__=1\n")
+    (tmp_path / "ship-123.retries").write_text("5\n")  # already at MAX_RETRIES
+    gh.side_effect = [[], []]
+    with mock.patch.object(ship_ci, "TMP_DIR", tmp_path):
+        assert ship_ci._next_action(pr=123) == "retries-exhausted"
+        # Counter not bumped further
+        assert ship_ci._read_retries(pr=123) == 5

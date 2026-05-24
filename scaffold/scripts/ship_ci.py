@@ -141,7 +141,16 @@ def _next_action(pr: int) -> str:
         return "done-red"
     if classification == "pending":
         return f"redispatch-{mode}"
-    raise NotImplementedError(f"_next_action: classification={classification!r} (empty) not handled yet")
+
+    # classification == "empty"
+    if mode == "required":
+        all_checks = _gh_checks_json(pr, required_only=False)
+        if all_checks:
+            return "ask-non-required"
+    if _read_retries(pr) >= MAX_RETRIES:
+        return "retries-exhausted"
+    _bump_retries(pr)
+    return f"redispatch-{mode}-after-15s"
 
 
 def _wipe_state(pr: int) -> None:
@@ -153,6 +162,10 @@ def _cmd_start(pr: int) -> None:
     _wipe_state(pr)
 
 
+def _cmd_next_action(pr: int) -> None:
+    print(_next_action(pr))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Ship CI watch helper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -160,9 +173,14 @@ def main(argv: list[str] | None = None) -> None:
     start_p = sub.add_parser("start", help="Wipe ship state files for a PR")
     start_p.add_argument("--pr", type=int, required=True)
 
+    next_p = sub.add_parser("next-action", help="Classify the next ship action from CI state")
+    next_p.add_argument("--pr", type=int, required=True)
+
     args = parser.parse_args(argv)
     if args.command == "start":
         _cmd_start(args.pr)
+    elif args.command == "next-action":
+        _cmd_next_action(args.pr)
 
 
 if __name__ == "__main__":
