@@ -43,7 +43,7 @@ No new files. No new external dependencies.
 - Modify: `scaffold/scripts/frontmatter.py`
 - Modify: `scaffold/scripts/test_frontmatter.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_frontmatter.py](scaffold/scripts/test_frontmatter.py):
 
@@ -93,13 +93,13 @@ def test_block_style_list_still_unsupported(tmp_path):
     assert fm["key"] == ""
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_frontmatter.py -v -k "flow_list or block_style"`
 
 Expected: all five new tests FAIL. `test_parse_flow_list_at_top_level` and `test_parse_empty_flow_list` will report `fm["tags"]` is a string like `"[a, b, c]"` instead of a list. `test_parse_flow_list_inside_nested_mapping` will report `fm["related"]["prs"]` is the string `"[42, 51]"`. `test_block_style_list_still_unsupported` may PASS already (it pins current behavior) — that's fine.
 
-- [ ] **Step 3: Implement flow-style list parsing**
+- [x] **Step 3: Implement flow-style list parsing**
 
 In [scaffold/scripts/frontmatter.py](scaffold/scripts/frontmatter.py), add a helper above `_parse_yaml_block` (just below `_strip_quotes` at line 29):
 
@@ -153,13 +153,13 @@ def _parse_yaml_block(block: str) -> dict[str, Any]:
 
 Note: the inner `nested` dict's value type changes from `dict[str, str]` to `dict[str, Any]` because list values can now appear.
 
-- [ ] **Step 4: Run all frontmatter tests to verify they pass**
+- [x] **Step 4: Run all frontmatter tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_frontmatter.py -v`
 
 Expected: 12 passing tests (7 original + 5 new). Pay particular attention that `test_nested_related` and `test_multiline_nested` still pass — those tests assert string values for `pr`, which the new parser still returns since `"42"` is not a flow-list shape.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scaffold/scripts/frontmatter.py scaffold/scripts/test_frontmatter.py
@@ -186,7 +186,7 @@ EOF
 - Modify: `scaffold/scripts/board.py`
 - Modify: `scaffold/scripts/test_board.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_board.py](scaffold/scripts/test_board.py):
 
@@ -245,13 +245,13 @@ def test_set_related_scalar_preserves_other_frontmatter_lines(tmp_path):
     assert "  pr: 99" in text
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "set_related_scalar"`
 
 Expected: all four FAIL with `AttributeError: module 'board' has no attribute '_set_related_scalar'`.
 
-- [ ] **Step 3: Implement the helpers**
+- [x] **Step 3: Implement the helpers**
 
 In [scaffold/scripts/board.py](scaffold/scripts/board.py), insert these two functions immediately after `_flip_status_in_file` (which ends at line 289):
 
@@ -326,19 +326,19 @@ def _set_related_scalar(path: Path, key: str, value: Any) -> None:
     _edit_frontmatter_related(path, mutator)
 ```
 
-- [ ] **Step 4: Run the new tests to verify they pass**
+- [x] **Step 4: Run the new tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "set_related_scalar"`
 
 Expected: all four PASS.
 
-- [ ] **Step 5: Run the full board test suite to check for regressions**
+- [x] **Step 5: Run the full board test suite to check for regressions**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v`
 
 Expected: all existing tests still pass (the new helpers don't change any current call sites).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scaffold/scripts/board.py scaffold/scripts/test_board.py
@@ -362,7 +362,7 @@ EOF
 - Modify: `scaffold/scripts/board.py`
 - Modify: `scaffold/scripts/test_board.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_board.py](scaffold/scripts/test_board.py):
 
@@ -409,13 +409,13 @@ def test_append_related_list_preserves_other_related_keys(tmp_path):
     assert "  prs: [42]" in text
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "append_related_list"`
 
 Expected: all four FAIL with `AttributeError: module 'board' has no attribute '_append_related_list'`.
 
-- [ ] **Step 3: Implement the helper**
+- [x] **Step 3: Implement the helper**
 
 In [scaffold/scripts/board.py](scaffold/scripts/board.py), insert this function immediately after `_set_related_scalar` (just added in Task 2):
 
@@ -436,19 +436,19 @@ def _append_related_list(path: Path, key: str, value: int) -> None:
     _edit_frontmatter_related(path, mutator)
 ```
 
-- [ ] **Step 4: Run the new tests to verify they pass**
+- [x] **Step 4: Run the new tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "append_related_list"`
 
 Expected: all four PASS.
 
-- [ ] **Step 5: Run the full board test suite to check for regressions**
+- [x] **Step 5: Run the full board test suite to check for regressions**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v`
 
 Expected: all existing tests still pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scaffold/scripts/board.py scaffold/scripts/test_board.py
@@ -473,7 +473,7 @@ EOF
 - Modify: `scaffold/scripts/board.py`
 - Modify: `scaffold/scripts/test_board.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_board.py](scaffold/scripts/test_board.py):
 
@@ -519,13 +519,13 @@ def test_find_done_plans_for_branch_ignores_other_branches(tmp_path):
     assert result[0][1].get("summary") == "On X"
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "find_done_plans"`
 
 Expected: all four FAIL with `AttributeError: module 'board' has no attribute '_find_done_plans_for_branch'`.
 
-- [ ] **Step 3: Implement the helper**
+- [x] **Step 3: Implement the helper**
 
 In [scaffold/scripts/board.py](scaffold/scripts/board.py), add this function immediately after `_find_active_plan_for_branch` (currently ends at line 298):
 
@@ -540,13 +540,13 @@ def _find_done_plans_for_branch(branch: str) -> list[tuple[Path, dict[str, Any]]
     ]
 ```
 
-- [ ] **Step 4: Run the new tests to verify they pass**
+- [x] **Step 4: Run the new tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "find_done_plans"`
 
 Expected: all four PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scaffold/scripts/board.py scaffold/scripts/test_board.py
@@ -569,7 +569,7 @@ EOF
 - Modify: `scaffold/scripts/board.py`
 - Modify: `scaffold/scripts/test_board.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_board.py](scaffold/scripts/test_board.py):
 
@@ -863,13 +863,13 @@ def test_set_pr_errors_on_multiple_done_plans_for_branch(tmp_path):
         assert exc_info.value.code == 1
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "set_pr"`
 
 Expected: all eleven FAIL with `AttributeError: module 'board' has no attribute '_cmd_set_pr'`.
 
-- [ ] **Step 3: Implement `_cmd_set_pr`**
+- [x] **Step 3: Implement `_cmd_set_pr`**
 
 In [scaffold/scripts/board.py](scaffold/scripts/board.py), insert this function immediately after `_cmd_abandon` (currently ends at line 359):
 
@@ -924,7 +924,7 @@ def _cmd_set_pr(pr: int, branch: str) -> None:
     print(f"Done. Run `git commit` to finalize.")
 ```
 
-- [ ] **Step 4: Wire `set-pr` into the CLI**
+- [x] **Step 4: Wire `set-pr` into the CLI**
 
 In [scaffold/scripts/board.py](scaffold/scripts/board.py), in the `main(...)` function, add a new subparser between the existing `abandon` and `check-merge` parsers (currently around lines 471-475):
 
@@ -971,13 +971,13 @@ Replace with:
     elif args.command == "check-merge":
 ```
 
-- [ ] **Step 5: Run all set-pr tests to verify they pass**
+- [x] **Step 5: Run all set-pr tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v -k "set_pr"`
 
 Expected: all eleven PASS.
 
-- [ ] **Step 6: Sanity-check the CLI surface**
+- [x] **Step 6: Sanity-check the CLI surface**
 
 Run: `python3 scaffold/scripts/board.py set-pr --help`
 
@@ -987,13 +987,13 @@ Run: `python3 scaffold/scripts/board.py --help`
 
 Expected: `set-pr` appears in the subcommand list.
 
-- [ ] **Step 7: Run the full board test suite**
+- [x] **Step 7: Run the full board test suite**
 
 Run: `python3 -m pytest scaffold/scripts/test_board.py -v`
 
 Expected: all tests pass. Existing tests should not have regressed (set-pr is purely additive).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scaffold/scripts/board.py scaffold/scripts/test_board.py
@@ -1021,7 +1021,7 @@ EOF
 - Modify: `scaffold/scripts/docs_index.py`
 - Modify: `scaffold/scripts/test_docs_index.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to [scaffold/scripts/test_docs_index.py](scaffold/scripts/test_docs_index.py):
 
@@ -1073,13 +1073,13 @@ def test_lint_warns_on_done_spec_with_empty_related_prs(tmp_path):
     assert any("related.prs" in w for w in warnings)
 ```
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v -k "done_plan or done_spec"`
 
 Expected: the plan tests behave per the OLD lint (the "without related.pr" test should already PASS since the current warning checks for `related.pr` on any done doc). The spec tests should FAIL: `test_lint_warns_on_done_spec_without_related_prs` will receive a warning mentioning `related.pr` not `related.prs`; `test_lint_silent_on_done_spec_with_related_prs` will FAIL because the current code requires `related.pr` even on specs; and `test_lint_warns_on_done_spec_with_empty_related_prs` will FAIL similarly.
 
-- [ ] **Step 3: Update the lint logic**
+- [x] **Step 3: Update the lint logic**
 
 In [scaffold/scripts/docs_index.py](scaffold/scripts/docs_index.py), find the block at lines 220-225:
 
@@ -1108,19 +1108,19 @@ Replace with:
                     warnings.append(f"{name}: status `done` without `related.prs`")
 ```
 
-- [ ] **Step 4: Run the new tests to verify they pass**
+- [x] **Step 4: Run the new tests to verify they pass**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v -k "done_plan or done_spec"`
 
 Expected: all five PASS.
 
-- [ ] **Step 5: Run the full docs_index test suite to check for regressions**
+- [x] **Step 5: Run the full docs_index test suite to check for regressions**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v`
 
 Expected: all existing tests still pass. In particular `test_lint_valid` (uses `status: active` docs) is unaffected by the new branches.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scaffold/scripts/docs_index.py scaffold/scripts/test_docs_index.py
@@ -1144,7 +1144,7 @@ EOF
 - Modify: `scaffold/scripts/docs_index.py`
 - Modify: `scaffold/scripts/test_docs_index.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to [scaffold/scripts/test_docs_index.py](scaffold/scripts/test_docs_index.py):
 
@@ -1172,13 +1172,13 @@ def test_fmt_entry_renders_list_as_bracketed_comma_join(tmp_path):
     assert "prs: [42, 51]" in index
 ```
 
-- [ ] **Step 2: Run the new test to verify it fails**
+- [x] **Step 2: Run the new test to verify it fails**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v -k "fmt_entry_renders_list"`
 
 Expected: FAIL. Today's `_fmt_entry` iterates `related.items()` and emits `f"{k}: {v}"`, so a list `["42", "51"]` would render as `prs: ['42', '51']` — not the desired `[42, 51]`.
 
-- [ ] **Step 3: Update `_fmt_entry`**
+- [x] **Step 3: Update `_fmt_entry`**
 
 In [scaffold/scripts/docs_index.py](scaffold/scripts/docs_index.py), find the block at lines 68-72:
 
@@ -1206,19 +1206,19 @@ Replace with:
                 extras.append(f"{k}: {v}")
 ```
 
-- [ ] **Step 4: Run the new test to verify it passes**
+- [x] **Step 4: Run the new test to verify it passes**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v -k "fmt_entry_renders_list"`
 
 Expected: PASS.
 
-- [ ] **Step 5: Run the full docs_index test suite**
+- [x] **Step 5: Run the full docs_index test suite**
 
 Run: `python3 -m pytest scaffold/scripts/test_docs_index.py -v`
 
 Expected: all tests pass. Existing tests that exercise `_fmt_entry` (e.g. `test_build_index_sections`) work with string/dict values, not lists, so they're unaffected.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scaffold/scripts/docs_index.py scaffold/scripts/test_docs_index.py
@@ -1241,7 +1241,7 @@ EOF
 **Files:**
 - Modify: `scaffold/.claude/commands/task-ship.md`
 
-- [ ] **Step 1: Edit the slash command**
+- [x] **Step 1: Edit the slash command**
 
 In [scaffold/.claude/commands/task-ship.md](scaffold/.claude/commands/task-ship.md), find the end of section 2 (current step 5 ends with the self-link footer at lines 74-80). Append a new step 6 immediately after step 5 and before the `## 3. Watch CI in the background` heading. Insert this exact block:
 
@@ -1267,7 +1267,7 @@ In [scaffold/.claude/commands/task-ship.md](scaffold/.claude/commands/task-ship.
    3. If the porcelain output is empty after a successful `set-pr`, the PR was already recorded (idempotent rerun); skip the commit/push.
 ````
 
-- [ ] **Step 2: Verify the file is syntactically clean**
+- [x] **Step 2: Verify the file is syntactically clean**
 
 Run: `head -3 scaffold/.claude/commands/task-ship.md`
 
@@ -1286,7 +1286,7 @@ Run: `grep -n "set-pr" scaffold/.claude/commands/task-ship.md`
 
 Expected: at least one line — the new step's command invocation.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add scaffold/.claude/commands/task-ship.md
@@ -1309,13 +1309,13 @@ EOF
 
 ## Task 9: Final verification
 
-- [ ] **Step 1: Run the full scaffold test suite**
+- [x] **Step 1: Run the full scaffold test suite**
 
 Run: `python3 -m pytest scaffold/scripts/ -v`
 
 Expected: every test passes — including the originals, the 5 new frontmatter tests, the ~25 new board tests across Tasks 2-5, and the 6 new docs_index tests across Tasks 6-7.
 
-- [ ] **Step 2: Sanity-check the new CLI surface end-to-end**
+- [x] **Step 2: Sanity-check the new CLI surface end-to-end**
 
 Run: `python3 scaffold/scripts/board.py set-pr --pr 0 --branch nonexistent`
 
@@ -1325,7 +1325,7 @@ Run: `python3 scaffold/scripts/board.py set-pr --pr 42 --branch nonexistent`
 
 Expected: exits 1 with `ERROR: No done plan found for branch 'nonexistent'.`
 
-- [ ] **Step 3: Manually confirm a lint round-trip on a synthetic done plan**
+- [x] **Step 3: Manually confirm a lint round-trip on a synthetic done plan**
 
 Create a temporary test file to confirm the lint behavior end-to-end:
 
@@ -1366,6 +1366,6 @@ rm /tmp/done-plan.md
 
 Expected: no `WARNING:` lines, `OK — 1 file(s) checked, 0 warning(s)`.
 
-- [ ] **Step 4: Tick this plan's checkboxes**
+- [x] **Step 4: Tick this plan's checkboxes**
 
 Once every checkbox above is `- [x]`, the plan is complete. `/task-ship`'s pre-flight will then verify the plan and pass the gate command.
