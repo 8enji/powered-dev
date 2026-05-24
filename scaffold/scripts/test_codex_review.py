@@ -1099,3 +1099,50 @@ def test_finish_pr_422_retries_body_only(tmp_path, monkeypatch):
     # Second call must be body-only with event=COMMENT.
     assert calls[1]["comments"] == []
     assert calls[1]["event"] == "COMMENT"
+
+
+def test_end_to_end_local_review(tmp_path, monkeypatch):
+    """prepare → write fake codex output → finish → report exists."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "docs_index.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+    (repo / "feature.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    prompt_source = tmp_path / "review-prompt.md"
+    prompt_source.write_text("body\n", encoding="utf-8")
+    schema = tmp_path / "schema.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_REVIEW_TMP_ROOT", str(tmp_path / "tmp"))
+    monkeypatch.setenv("CODEX_REVIEW_PROMPT_SOURCE", str(prompt_source))
+    monkeypatch.setenv("CODEX_REVIEW_SCHEMA_PATH", str(schema))
+
+    # 1. prepare
+    rc = codex_main(["prepare", ""])
+    assert rc == 0
+    review_dir = Path((tmp_path / "tmp" / "codex-review.latest").read_text().strip())
+    assert (review_dir / "state.json").exists()
+    assert (review_dir / "prompt.txt").exists()
+
+    # 2. Simulate codex writing its output.
+    (review_dir / "last-message.json").write_text(json.dumps({
+        "summary": "Smoke test summary.",
+        "findings": [
+            {"path": "feature.py", "line": 1, "side": "RIGHT",
+             "severity": "minor", "body": "consider a docstring"},
+        ],
+    }), encoding="utf-8")
+    (review_dir / "status").write_text("__CODEX_EXIT__=0\n", encoding="utf-8")
+
+    # 3. finish
+    rc2 = codex_main(["finish"])
+    assert rc2 == 0
+    state = json.loads((review_dir / "state.json").read_text())
+    report = repo / state["report_path"]
+    assert report.exists()
+    body = report.read_text()
+    assert "Smoke test summary." in body
+    assert "## [minor] feature.py:1" in body
+    assert "**Findings:** 0 critical · 0 major · 1 minor · 0 nit" in body
