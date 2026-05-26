@@ -65,6 +65,10 @@ def test_ship_delegates_codex_review_to_separate_command():
     assert "Codex-review mode" not in ship
     # The actual review must dispatch via the separate slash command.
     assert "/request-codex-review $PR" in ship
+    # The option must be conditional — only offered when the command file exists.
+    # A future edit removing "only if" would unconditionally offer Codex review
+    # to users who don't have it installed.
+    assert 'only if `.claude/commands/request-codex-review.md` exists' in ship
 
 
 def test_ship_uses_default_branch_for_new_pr_summary():

@@ -50,9 +50,11 @@ Reflect on what just shipped. Surface followups so they aren't lost.
    - **Reflection.** Review the diff just committed (`git show --stat HEAD` for the file list; `git diff HEAD~1..HEAD` for content) and propose items that were noticed but deferred: related bugs, refactor opportunities, tests you skipped, polish you punted on.
    - **Diff scan for new TODO/FIXME.** Run:
      ```bash
-     git diff HEAD~1..HEAD --unified=0 | grep -nE '^\+[^+].*\b(TODO|FIXME)\b' || true
+     if git rev-parse HEAD~1 >/dev/null 2>&1; then
+       git diff HEAD~1..HEAD --unified=0 | grep -nP '^\+(?!\+\+).*\b(TODO|FIXME)\b' || true
+     fi
      ```
-     This filters to lines *added* by the commit that contain `TODO` or `FIXME` (the `[^+]` guards against matching the `+++ b/file` diff header). To recover `<file>:<line>` for each match, walk the diff alongside the matches or use `git grep -nE '\b(TODO|FIXME)\b'` on the working tree and intersect with the file list from `git show --name-only HEAD`.
+     This filters to lines *added* by the commit that contain `TODO` or `FIXME`. The `(?!\+\+)` negative lookahead excludes the `+++ b/file` diff header without consuming a character (avoiding the bug where a `+TODO:` at column 0 would have its `T` eaten by `[^+]`). The `HEAD~1` guard prevents a fatal error on the repository's very first commit. To recover `<file>:<line>` for each match, walk the diff alongside the matches or use `git grep -nE '\b(TODO|FIXME)\b'` on the working tree and intersect with the file list from `git show --name-only HEAD`.
    - Treat each TODO/FIXME match as a candidate item.
 2. If the candidate list is **empty**, print `No followups to log.` and continue to section 3 (push). Skip the rest of this section.
 3. Draft each candidate as `{title, notes, source}`:
@@ -63,8 +65,15 @@ Reflect on what just shipped. Surface followups so they aren't lost.
    - **Approve all** → continue to step 5.
    - **Edit list** → ask the user in a follow-up turn for the revised list (free-form text). Parse it back into `{title, notes, source}` tuples. Then continue to step 5.
    - **Skip** → print `Skipped logging followups.` and continue to section 3.
-5. For each item, run `python3 scripts/board.py add "<title>" --notes "<notes>" --source "<source>"`. If a value contains double quotes, backticks, dollar signs, or other shell-meta characters, use the `Bash` tool's argument array rather than embedding the value into a double-quoted string — or pre-escape with `printf '%q' "$VALUE"`. If `board.py` exits non-zero (duplicate title or other validation error), surface the message, skip that item, and continue with the rest.
-6. After all items are added, run `git status --porcelain`. If it shows staged changes (it should — `board.py add` stages `backlog.md` and `INDEX.md`), commit. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
+5. For each item, build the command safely with `printf %q` so shell-meta characters in the values don't break the invocation:
+   ```bash
+   TITLE=$(printf '%q' "$title_val")
+   NOTES=$(printf '%q' "$notes_val")
+   SOURCE=$(printf '%q' "$source_val")
+   python3 scripts/board.py add "$TITLE" --notes "$NOTES" --source "$SOURCE"
+   ```
+   If `board.py` exits non-zero (duplicate title or other validation error), surface the message, skip that item, and continue with the rest.
+6. After all items are added, run `git status --porcelain`. If it shows staged changes (it should — `board.py add` stages `backlog.md`), commit. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
    ```bash
    git commit -m "$(cat <<'EOF'
    chore(board): log followups

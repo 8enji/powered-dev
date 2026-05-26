@@ -141,12 +141,15 @@ def lint_backlog(backlog_path: Path) -> list[str]:
     if not backlog_path.exists():
         return []
 
-    text = backlog_path.read_text(encoding="utf-8")
+    # Use utf-8-sig so a Windows BOM doesn't break the ^## anchor on line 1.
+    # Use greedy stripping (<!--.*-->) so a comment body containing '-->' is
+    # removed in full, matching the behavior in _cmd_add.
+    text = backlog_path.read_text(encoding="utf-8-sig")
     errors: list[str] = []
     seen: dict[str, int] = {}
 
     # Strip HTML comment blocks <!-- ... --> before parsing titles
-    stripped = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    stripped = re.sub(r"<!--.*-->", "", text, flags=re.DOTALL)
 
     for line in stripped.splitlines():
         m = re.match(r"^##\s+(.+)", line)
@@ -593,8 +596,17 @@ def _cmd_add(title: str, notes: str | None, source: str | None) -> None:
     """Append a new entry to backlog.md.
 
     Validates that backlog.md exists and that the title is not already present.
-    Stages backlog.md and INDEX.md on success.
+    Stages backlog.md on success.
     """
+    # Normalize and validate title at function entry.
+    title = title.strip()
+    if not title or "\n" in title:
+        print(
+            f"ERROR: title must be a non-empty single line, got: {title!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if not BACKLOG_PATH.exists():
         print(
             f"ERROR: backlog.md missing at {BACKLOG_PATH} — run /init-workflow first.",
@@ -605,8 +617,12 @@ def _cmd_add(title: str, notes: str | None, source: str | None) -> None:
     # Dedupe against existing entries. Strip HTML comment blocks first to
     # match the same logic used by lint_backlog (template comments at the top
     # of the file must not produce false-positive matches).
-    text = BACKLOG_PATH.read_text(encoding="utf-8")
-    stripped = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    # Use utf-8-sig to strip a leading BOM that Windows editors may add.
+    # Use greedy stripping (<!--.*-->) so a comment body containing '-->'
+    # (e.g. <!-- use --> for this -->) is removed in full, not just up to the
+    # first '-->'.
+    text = BACKLOG_PATH.read_text(encoding="utf-8-sig")
+    stripped = re.sub(r"<!--.*-->", "", text, flags=re.DOTALL)
     headings = re.findall(r"^##\s+(.+?)\s*$", stripped, flags=re.MULTILINE)
     if title in headings:
         print(
@@ -635,8 +651,10 @@ def _cmd_add(title: str, notes: str | None, source: str | None) -> None:
     new_text = new_text.rstrip("\n") + "\n"
     BACKLOG_PATH.write_text(new_text, encoding="utf-8")
 
-    _regen_index()
-    _git_add([BACKLOG_PATH, INDEX_PATH])
+    # Do NOT call _regen_index() here — docs_index.build_index collects plan
+    # and spec docs, not backlog entries.  Adding to backlog.md does not change
+    # what INDEX.md should contain, so regenerating it is wasted work.
+    _git_add([BACKLOG_PATH])
     print(f"Added '{title}' to backlog.")
 
 
