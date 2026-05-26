@@ -18,9 +18,9 @@ Ship the current branch.
    - For any other failure, surface the command output and stop.
 3. The `PreToolUse` Bash hooks (`pre_merge_gate.sh` on `git push` / `gh *`) will also fire during the steps below. If any of them blocks, surface the hook's message and stop.
 
-## 1. Commit + push
+## 1. Commit
 
-1. Run `git status --porcelain`. If the output is empty AND `git rev-list @{u}..HEAD --count` returns `0`, skip to section 2 (nothing to commit or push). If the `rev-list` command fails because there is no upstream configured (`fatal: no upstream configured`), treat the skip condition as false — i.e., proceed normally; the push step will create the upstream.
+1. Run `git status --porcelain`. If the output is empty, there is nothing new to commit — skip sections 1 and 2 entirely (no implementation commit means no followups to log against it) and proceed to section 3 (push). `git push` is idempotent on an up-to-date branch, so the push will be a no-op if there is nothing new to send.
 2. If the working tree is dirty (porcelain not empty):
    1. Run `git diff --staged` and `git diff` to see all changes.
    2. Read recent commit messages with `git log -5 --oneline` to match scope/style.
@@ -39,15 +39,62 @@ Ship the current branch.
       )"
       ```
    7. If the pre-commit hook fails, do NOT amend. Fix the issue, re-stage, create a new commit.
-3. Push:
-   1. If `git rev-parse --abbrev-ref --symbolic-full-name @{u}` exits non-zero (no upstream), run `git push -u origin "$(git rev-parse --abbrev-ref HEAD)"`.
-   2. Else run `git push`.
 
-## 2. Open or reuse PR
+## 2. Log followups to backlog
+
+Reflect on what just shipped. Surface followups so they aren't lost.
+
+**Defensive check.** Section 1's skip instruction sends the agent directly to section 3, bypassing this section entirely; this is the intended flow when there is nothing new to commit. If you somehow arrived here without a new commit on `HEAD`, stop and continue to section 3 — `HEAD~1..HEAD` would reference a previous run's commit and produce stale followups.
+
+1. Build a candidate list from two sources:
+   - **Reflection.** Review the diff just committed (`git show --stat HEAD` for the file list; `git diff HEAD~1..HEAD` for content) and propose items that were noticed but deferred: related bugs, refactor opportunities, tests you skipped, polish you punted on.
+   - **Diff scan for new TODO/FIXME.** Run:
+     ```bash
+     if git rev-parse HEAD~1 >/dev/null 2>&1; then
+       git diff HEAD~1..HEAD --unified=0 | grep -nP '^\+(?!\+\+).*\b(TODO|FIXME)\b' || true
+     fi
+     ```
+     This filters to lines *added* by the commit that contain `TODO` or `FIXME`. The `(?!\+\+)` negative lookahead excludes the `+++ b/file` diff header without consuming a character (avoiding the bug where a `+TODO:` at column 0 would have its `T` eaten by `[^+]`). The `HEAD~1` guard prevents a fatal error on the repository's very first commit. To recover `<file>:<line>` for each match, walk the diff alongside the matches or use `git grep -nE '\b(TODO|FIXME)\b'` on the working tree and intersect with the file list from `git show --name-only HEAD`.
+   - Treat each TODO/FIXME match as a candidate item.
+2. If the candidate list is **empty**, print `No followups to log.` and continue to section 3 (push). Skip the rest of this section.
+3. Draft each candidate as `{title, notes, source}`:
+   - `title` — short imperative phrase (under ~80 chars). Mirror the style of existing backlog titles in the repo.
+   - `notes` — 1-3 lines: what to do, why it was deferred.
+   - `source` — for reflection items, the commit SHA (`git rev-parse --short HEAD`). For TODO/FIXME items, `<file>:<line>` of the comment.
+4. Present the full list to the user with `AskUserQuestion`. Question: "Log these followups to the backlog?" Options: **Approve all** / **Edit list** / **Skip**.
+   - **Approve all** → continue to step 5.
+   - **Edit list** → ask the user in a follow-up turn for the revised list (free-form text). Parse it back into `{title, notes, source}` tuples. Then continue to step 5.
+   - **Skip** → print `Skipped logging followups.` and continue to section 3.
+5. For each item, build the command safely with `printf %q` so shell-meta characters in the values don't break the invocation:
+   ```bash
+   TITLE=$(printf '%q' "$title_val")
+   NOTES=$(printf '%q' "$notes_val")
+   SOURCE=$(printf '%q' "$source_val")
+   python3 scripts/board.py add "$TITLE" --notes "$NOTES" --source "$SOURCE"
+   ```
+   If `board.py` exits non-zero (duplicate title or other validation error), surface the message, skip that item, and continue with the rest.
+6. After all items are added, run `git status --porcelain`. If it shows staged changes (it should — `board.py add` stages `backlog.md`), commit. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
+   ```bash
+   git commit -m "$(cat <<'EOF'
+   chore(board): log followups
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   EOF
+   )"
+   ```
+   If the pre-commit hook fails, do NOT amend. Fix the issue, re-stage, create a new commit.
+7. Continue to section 3 (push). Both commits push together.
+
+## 3. Push
+
+1. If `git rev-parse --abbrev-ref --symbolic-full-name @{u}` exits non-zero (no upstream), run `git push -u origin "$(git rev-parse --abbrev-ref HEAD)"`.
+2. Else run `git push`.
+
+## 4. Open or reuse PR
 
 1. Get current state: `gh pr view --json number,url,state,baseRefName` (operates on the current branch by default).
 2. Branch on the result:
-   - `state: "OPEN"` → reuse. Capture `number` as `$PR`, `url` as `$PR_URL`, and `baseRefName` as `$BASE`. Print "Reusing open PR #<n>: <url>". Continue to section 3.
+   - `state: "OPEN"` → reuse. Capture `number` as `$PR`, `url` as `$PR_URL`, and `baseRefName` as `$BASE`. Print "Reusing open PR #<n>: <url>". Continue to section 5.
    - `state: "MERGED"` → print "PR #<n> already merged: <url>". Stop.
    - `state: "CLOSED"` → print "PR #<n> closed (not merged): <url>. Reopen manually if you want to ship this branch." Stop.
    - Command exits non-zero with no JSON on stdout → no PR exists; continue to step 3.
@@ -98,7 +145,7 @@ Ship the current branch.
       ```
    3. If the porcelain output is empty after a successful `set-pr`, the PR was already recorded (idempotent rerun); skip the commit/push.
 
-## 3. Watch CI in the background
+## 5. Watch CI in the background
 
 1. Pre-flight: confirm the PR isn't in a state that prevents CI from running. `MERGE_STATE=$(gh pr view "$PR" --json mergeStateStatus --jq '.mergeStateStatus')`. If `$MERGE_STATE` is `DIRTY`, stop and tell the user: "PR #$PR has merge conflicts (mergeStateStatus=DIRTY); CI workflows that depend on the merge ref won't run and the PR can't be merged. Resolve conflicts on the branch, then rerun /task-ship." Do not initialize the watcher.
 2. Initialize state: `python3 scripts/ship_ci.py start --pr "$PR"`.
@@ -116,8 +163,8 @@ Run `ACTION=$(python3 scripts/ship_ci.py next-action --pr "$PR")` and branch on 
 
 | `$ACTION`                          | Do                                                                                              |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `done-green`                       | Continue to section 4 (Green path).                                                             |
-| `done-red`                         | Continue to section 5 (Red path).                                                               |
+| `done-green`                       | Continue to section 6 (Green path).                                                             |
+| `done-red`                         | Continue to section 7 (Red path).                                                               |
 | `redispatch-required`              | Re-dispatch `gh pr checks "$PR" --watch --required ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn. |
 | `redispatch-all`                   | Re-dispatch `gh pr checks "$PR" --watch ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn.            |
 | `redispatch-required-after-15s`    | `sleep 15`, then re-dispatch the required watch as above. End turn.                             |
@@ -127,10 +174,10 @@ Run `ACTION=$(python3 scripts/ship_ci.py next-action --pr "$PR")` and branch on 
 
 For `ask-non-required` follow-up:
 - **Watch non-required CI** → `python3 scripts/ship_ci.py switch-mode --pr "$PR" --to all`, then dispatch `gh pr checks "$PR" --watch ; echo "__SHIP_EXIT__=$?" > /tmp/ship-$PR.status` in background. End turn.
-- **Merge now** → continue to section 4 (Green path).
+- **Merge now** → continue to section 6 (Green path).
 - **Stop** → print PR URL and stop.
 
-## 4. Green path
+## 6. Green path
 
 1. Capture branch: `BRANCH=$(git rev-parse --abbrev-ref HEAD)`.
 2. Check merge readiness: `STATUS=$(gh pr view $PR --json mergeStateStatus --jq '.mergeStateStatus')`. Handle CLEAN/BEHIND/DIRTY/BLOCKED/UNKNOWN.
@@ -140,7 +187,7 @@ For `ask-non-required` follow-up:
    - **Don't merge yet** — print URL, stop.
    - **Open in browser** — `gh pr view $PR --web`, stop.
 
-## 5. Red path
+## 7. Red path
 
 1. Capture branch.
 2. Find failed run from `gh pr checks $PR --json name,state,link,startedAt`.
@@ -153,9 +200,9 @@ For `ask-non-required` follow-up:
 
 ## Edge cases
 
-- PR already merged/closed — handled in section 2.
-- PR has merge conflicts (`mergeStateStatus=DIRTY`) — short-circuited in section 3 step 1 before the watcher starts.
+- PR already merged/closed — handled in section 4.
+- PR has merge conflicts (`mergeStateStatus=DIRTY`) — short-circuited in section 5 step 1 before the watcher starts.
 - Background watch never exits — re-run `gh pr checks` foreground on re-engage.
-- No required checks configured — section 3 step 3 disambiguates.
+- No required checks configured — section 5 step 3 disambiguates.
 - Timing race (no checks yet) — retry with pre-sleep, max 5.
 - `gh` errors — bubble stderr, stop.

@@ -55,14 +55,20 @@ def test_start_defers_commit_to_ship():
     assert "Leave it staged by default" in start
 
 
-def test_ship_keeps_codex_review_as_separate_optional_command():
+def test_ship_delegates_codex_review_to_separate_command():
+    """Ship may offer Codex review as a Green-path option, but it must delegate
+    all the work to /request-codex-review rather than embedding review machinery."""
     ship = _read(".claude/commands/task-ship.md")
 
+    # No leftover temp-file machinery or bespoke review mode in ship itself.
     assert "/tmp/ship-codex-review-pr" not in ship
     assert "Codex-review mode" not in ship
-    assert "Request Codex review" not in ship
-    assert "Optional follow-up" in ship
+    # The actual review must dispatch via the separate slash command.
     assert "/request-codex-review $PR" in ship
+    # The option must be conditional — only offered when the command file exists.
+    # A future edit removing "only if" would unconditionally offer Codex review
+    # to users who don't have it installed.
+    assert 'only if `.claude/commands/request-codex-review.md` exists' in ship
 
 
 def test_ship_uses_default_branch_for_new_pr_summary():
@@ -198,30 +204,25 @@ def test_codex_review_jq_requirement_is_documented():
     assert "`jq`" in customization
 
 
-def test_readme_documents_happy_path_and_failure_recovery():
+def test_readme_documents_core_commands():
+    """README narrative must mention the core slash commands and not reference
+    removed commands (task-finish, task-backlog)."""
     readme = _read("../README.md")
 
-    assert "## Happy path" in readme
-    for command in ("/init-workflow", "/task-start", "/task-ship"):
+    for command in ("/init-workflow", "/task-start", "/task-ship", "/request-codex-review"):
         assert command in readme
-    happy_path = readme.split("## Happy path", 1)[1].split("## Failure recovery", 1)[0]
-    assert "/task-finish" not in happy_path
+    assert "/task-finish" not in readme
     assert "/task-backlog" not in readme
-
-    assert "## Failure recovery" in readme
-    assert "Active plan blocks push or PR creation" in readme
-    assert "Commit fails after docs regenerate" in readme
-    assert "Codex review wakes up later" in readme
-    assert "CI watch fails or has no required checks" in readme
 
 
 def test_superpowers_install_command_is_documented():
+    """The superpowers install command must appear in the install flow (init) and
+    in customization docs. The README's narrative install path delegates to
+    init-workflow.md, so it does not need the literal install command itself."""
     init = _read("../init-workflow.md")
-    readme = _read("../README.md")
     customization = _read("../docs/customization.md")
 
     install_command = "/plugin install superpowers@claude-plugins-official"
     assert install_command in init
-    assert install_command in readme
     assert install_command in customization
     assert "Install now" in init

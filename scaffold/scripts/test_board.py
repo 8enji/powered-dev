@@ -1,5 +1,6 @@
 """Tests for board.py."""
 
+import pytest
 from pathlib import Path
 from unittest import mock
 
@@ -81,7 +82,6 @@ def test_start_rejects_duplicate_active_plan(tmp_path):
         mock.patch.object(board, "BACKLOG_PATH", backlog),
         mock.patch.object(board, "_current_branch", return_value="feature/dup"),
     ):
-        import pytest
         with pytest.raises(SystemExit) as exc_info:
             board._cmd_start("New Task", "lite")
         assert exc_info.value.code == 1
@@ -515,7 +515,6 @@ def test_set_pr_on_shared_active_spec_appends_anyway(tmp_path):
 
 def test_set_pr_rejects_zero_or_negative_pr(tmp_path):
     """set-pr with pr <= 0 errors and exits 1, plan untouched."""
-    import pytest
     docs = tmp_path / "docs" / "superpowers"
     plans = docs / "plans"
     specs = docs / "specs"
@@ -540,7 +539,6 @@ def test_set_pr_rejects_zero_or_negative_pr(tmp_path):
 
 def test_set_pr_errors_when_no_done_plan_for_branch(tmp_path):
     """No done plan on branch — set-pr exits 1."""
-    import pytest
     docs = tmp_path / "docs" / "superpowers"
     plans = docs / "plans"
     specs = docs / "specs"
@@ -562,7 +560,6 @@ def test_set_pr_errors_when_no_done_plan_for_branch(tmp_path):
 
 def test_set_pr_errors_when_only_an_active_plan_exists_for_branch(tmp_path):
     """Plan exists but is active, not done — set-pr exits 1."""
-    import pytest
     docs = tmp_path / "docs" / "superpowers"
     plans = docs / "plans"
     specs = docs / "specs"
@@ -637,7 +634,6 @@ def test_set_pr_skips_missing_spec_file(tmp_path):
 
 def test_set_pr_errors_on_multiple_done_plans_for_branch(tmp_path):
     """Two done plans on same branch — set-pr refuses to guess and exits 1."""
-    import pytest
     docs = tmp_path / "docs" / "superpowers"
     plans = docs / "plans"
     specs = docs / "specs"
@@ -660,7 +656,6 @@ def test_set_pr_errors_on_multiple_done_plans_for_branch(tmp_path):
 
 def test_set_pr_errors_to_stderr_not_stdout(capsys):
     """set-pr ERROR messages must go to stderr so /task-ship's 2>/dev/null swallows them."""
-    import pytest
     with pytest.raises(SystemExit):
         board._cmd_set_pr(pr=0, branch="x")
     captured = capsys.readouterr()
@@ -797,7 +792,6 @@ def test_parse_merge_branches_not_a_merge():
 
 
 def test_check_merge_cmd_blocks_when_any_branch_active(tmp_path, capsys):
-    import pytest
     plans = tmp_path / "docs" / "superpowers" / "plans"
     _make_plan(plans, "Active", "active", "feature/bar")
 
@@ -809,7 +803,6 @@ def test_check_merge_cmd_blocks_when_any_branch_active(tmp_path, capsys):
 
 
 def test_check_merge_cmd_passes_when_no_active(tmp_path):
-    import pytest
     plans = tmp_path / "docs" / "superpowers" / "plans"
     plans.mkdir(parents=True)
 
@@ -819,14 +812,12 @@ def test_check_merge_cmd_passes_when_no_active(tmp_path):
 
 
 def test_check_merge_cmd_passes_on_bare_merge(tmp_path):
-    import pytest
     with pytest.raises(SystemExit) as exc:
         board._cmd_check_merge_cmd("git merge")
     assert exc.value.code == 0
 
 
 def test_check_merge_cmd_warns_and_passes_on_dollar_var(tmp_path, capsys):
-    import pytest
     plans = tmp_path / "docs" / "superpowers" / "plans"
     _make_plan(plans, "Active", "active", "feature/wip")
     with mock.patch.object(board, "PLANS_ROOT", plans), pytest.raises(SystemExit) as exc:
@@ -838,7 +829,6 @@ def test_check_merge_cmd_warns_and_passes_on_dollar_var(tmp_path, capsys):
 
 
 def test_check_merge_cmd_warns_on_command_substitution(tmp_path, capsys):
-    import pytest
     with pytest.raises(SystemExit) as exc:
         board._cmd_check_merge_cmd("git merge $(git symbolic-ref --short HEAD)")
     assert exc.value.code == 0
@@ -847,7 +837,6 @@ def test_check_merge_cmd_warns_on_command_substitution(tmp_path, capsys):
 
 def test_main_dispatches_check_merge_cmd(tmp_path, capsys):
     """Regression: argparse dest name collision once silently swallowed dispatch."""
-    import pytest
     plans = tmp_path / "docs" / "superpowers" / "plans"
     _make_plan(plans, "Active", "active", "feature/wip")
 
@@ -855,3 +844,302 @@ def test_main_dispatches_check_merge_cmd(tmp_path, capsys):
         board.main(["check-merge-cmd", 'git merge feature/wip -m "msg"'])
     assert exc.value.code == 1
     assert "feature/wip" in capsys.readouterr().out
+
+
+def test_add_basic(tmp_path):
+    """add with title + notes + source produces the expected block."""
+    docs = tmp_path / "docs" / "superpowers"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Existing\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("New Item", "Why deferred.", "abc1234")
+
+    text = backlog.read_text()
+    assert "## Existing" in text
+    assert "## New Item" in text
+    assert "Why deferred." in text
+    assert "Source: abc1234" in text
+
+
+def test_add_title_only(tmp_path):
+    """add with title only produces just the heading, no notes and no Source: line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Bare Title", None, None)
+
+    text = backlog.read_text()
+    assert "## Bare Title" in text
+    assert "Source:" not in text
+
+
+def test_add_notes_no_source(tmp_path):
+    """add with notes but no source omits the Source: line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Some Task", "A note.", None)
+
+    text = backlog.read_text()
+    assert "## Some Task" in text
+    assert "A note." in text
+    assert "Source:" not in text
+
+
+def test_add_source_no_notes(tmp_path):
+    """add with source but no notes produces title + Source: line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Some Task", None, "src/file.py:42")
+
+    text = backlog.read_text()
+    assert "## Some Task" in text
+    assert "Source: src/file.py:42" in text
+
+
+def test_add_duplicate_title_rejected(tmp_path, capsys):
+    """add rejects a title that already exists in the backlog."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Existing\n\nA note.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("Existing", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "duplicate" in err.lower()
+    assert "Existing" in err
+
+
+def test_add_ignores_title_inside_html_comment(tmp_path):
+    """A `## heading` inside an HTML comment block must not trigger the duplicate guard."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text(
+        "<!--\nExample entry template:\n## Inside Comment\n-->\n\n## Real Entry\n\nNotes.\n"
+    )
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        # Should succeed — "Inside Comment" lives in a comment, not as a real entry.
+        board._cmd_add("Inside Comment", None, None)
+
+    text = backlog.read_text()
+    # The original comment block is preserved.
+    assert "<!--" in text
+    # The new entry was appended.
+    assert text.count("## Inside Comment") == 2  # one in comment, one as real heading
+    assert "## Real Entry" in text
+
+
+def test_add_missing_backlog(tmp_path, capsys):
+    """add errors if backlog.md does not exist."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    # Do NOT create the file.
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("Something", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "backlog.md" in err
+    assert "missing" in err.lower()
+
+
+def test_add_stages_files(tmp_path):
+    """add stages only backlog.md — INDEX.md is not regenerated by add."""
+    docs = tmp_path / "docs" / "superpowers"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_git_add") as git_add,
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("New", "notes", "abc1234")
+
+    staged = git_add.call_args.args[0]
+    assert backlog in staged
+    assert index not in staged
+
+
+def test_add_preserves_existing_entries(tmp_path):
+    """add appends to backlog without disturbing earlier entries."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Foo\n\nFoo notes.\n\n## Bar\n\nBar notes.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Baz", "Baz notes.", "abc1234")
+
+    text = backlog.read_text()
+    assert text.index("## Foo") < text.index("## Bar") < text.index("## Baz")
+    assert "Foo notes." in text
+    assert "Bar notes." in text
+    assert "Baz notes." in text
+
+
+def test_add_trailing_newline_normalization(tmp_path):
+    """add leaves backlog ending with exactly one trailing newline."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    # No trailing newline.
+    backlog.write_text("## Foo\n\nnotes")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Bar", "bar notes", "abc1234")
+
+    text = backlog.read_text()
+    # Exactly one trailing newline.
+    assert text.endswith("\n")
+    assert not text.endswith("\n\n")
+
+
+def test_add_strips_title_whitespace(tmp_path):
+    """Leading/trailing whitespace in the title is stripped before dedupe and write."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## My Task\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        # Padded title should be treated as duplicate of "My Task".
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("  My Task  ", None, None)
+        assert exc_info.value.code == 1
+
+    # Verify the file was not modified (dedupe fired before write).
+    text = backlog.read_text()
+    assert text.count("## My Task") == 1
+
+
+def test_add_strips_title_and_writes_normalized(tmp_path):
+    """Title is stored without surrounding whitespace."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("  Padded Title  ", None, None)
+
+    text = backlog.read_text()
+    assert "## Padded Title\n" in text
+    assert "##   Padded Title  " not in text
+
+
+def test_add_rejects_empty_title(tmp_path, capsys):
+    """An empty (or whitespace-only) title causes exit 1 with an error message."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("   ", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "non-empty single line" in err
+
+
+def test_add_rejects_multiline_title(tmp_path, capsys):
+    """A title containing a newline causes exit 1 with an error message."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("line one\nline two", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "non-empty single line" in err
+
+
+def test_add_utf8_bom_backlog(tmp_path):
+    """A backlog.md starting with a UTF-8 BOM does not confuse the dedupe check."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    # Write a BOM-prefixed file as a Windows editor would.
+    backlog.write_bytes(b"\xef\xbb\xbf## Existing\n\nNotes.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        # "Existing" is already present — should be rejected as duplicate.
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("Existing", None, None)
+        assert exc_info.value.code == 1
