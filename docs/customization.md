@@ -143,4 +143,12 @@ Reports show UTC instead of user's local timezone.
 
 Titles must be unique (enforced by the pre-commit hook).
 
+You can also append to the backlog manually without going through `/task-ship`:
+
+```bash
+python3 scripts/board.py add "<title>" --notes "<body>" --source "<ref>"
+```
+
+The subcommand rejects duplicate titles (same check the pre-commit hook runs) and stages `backlog.md` + `INDEX.md` for you. Useful when you want to capture an item from outside the normal task lifecycle.
+
 You don't have to put every task in the backlog. Pass a title directly with `/task-start "Title"` and the command scaffolds the spec/plan stubs without requiring a backlog entry — useful for one-off fixes or projects that don't maintain a backlog.

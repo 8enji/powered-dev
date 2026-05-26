@@ -37,6 +37,8 @@ If the superpowers plugin is installed, it then chains into brainstorming (full 
 
 Handles the full ship cycle: finish the active plan when needed, commit with a drafted message, push, open or reuse a PR, watch CI in the background, then prompt to merge (green) or debug (red).
 
+Between the implementation commit and the push, `/task-ship` pauses for a "log followups" step. The agent reflects on the diff and scans for new `TODO`/`FIXME` comments, then presents any discovered followups to you for approval. Approved items get appended to `docs/board/backlog.md` via `python3 scripts/board.py add` and ride along in a `chore(board): log followups` commit on the same push.
+
 ### `/request-codex-review`
 
 Optional separate command. If installed, it can review either a GitHub PR or local-only changes. Run it directly when you want another review pass; `/task-ship` does not dispatch Codex review as part of its merge flow.
