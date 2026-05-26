@@ -20,7 +20,7 @@ Ship the current branch.
 
 ## 1. Commit
 
-1. Run `git status --porcelain`. If the output is empty, there is nothing new to commit — skip sections 1 and 2 entirely (no implementation commit means no followups to log against it) and proceed to section 3 (push), which will independently decide whether there is anything to push.
+1. Run `git status --porcelain`. If the output is empty, there is nothing new to commit — skip sections 1 and 2 entirely (no implementation commit means no followups to log against it) and proceed to section 3 (push). `git push` is idempotent on an up-to-date branch, so the push will be a no-op if there is nothing new to send.
 2. If the working tree is dirty (porcelain not empty):
    1. Run `git diff --staged` and `git diff` to see all changes.
    2. Read recent commit messages with `git log -5 --oneline` to match scope/style.
@@ -44,7 +44,7 @@ Ship the current branch.
 
 Reflect on what just shipped. Surface followups so they aren't lost.
 
-**Skip this section entirely if section 1 was skipped** (no new implementation commit means `HEAD` belongs to a previous run; logging followups against it would attach stale references).
+**Defensive check.** Section 1's skip instruction sends the agent directly to section 3, bypassing this section entirely; this is the intended flow when there is nothing new to commit. If you somehow arrived here without a new commit on `HEAD`, stop and continue to section 3 — `HEAD~1..HEAD` would reference a previous run's commit and produce stale followups.
 
 1. Build a candidate list from two sources:
    - **Reflection.** Review the diff just committed (`git show --stat HEAD` for the file list; `git diff HEAD~1..HEAD` for content) and propose items that were noticed but deferred: related bugs, refactor opportunities, tests you skipped, polish you punted on.
@@ -63,7 +63,7 @@ Reflect on what just shipped. Surface followups so they aren't lost.
    - **Approve all** → continue to step 5.
    - **Edit list** → ask the user in a follow-up turn for the revised list (free-form text). Parse it back into `{title, notes, source}` tuples. Then continue to step 5.
    - **Skip** → print `Skipped logging followups.` and continue to section 3.
-5. For each item, run `python3 scripts/board.py add "<title>" --notes "<notes>" --source "<source>"`. If `board.py` exits non-zero (duplicate title or other validation error), surface the message, skip that item, and continue with the rest.
+5. For each item, run `python3 scripts/board.py add "<title>" --notes "<notes>" --source "<source>"`. If a value contains double quotes, backticks, dollar signs, or other shell-meta characters, use the `Bash` tool's argument array rather than embedding the value into a double-quoted string — or pre-escape with `printf '%q' "$VALUE"`. If `board.py` exits non-zero (duplicate title or other validation error), surface the message, skip that item, and continue with the rest.
 6. After all items are added, run `git status --porcelain`. If it shows staged changes (it should — `board.py add` stages `backlog.md` and `INDEX.md`), commit. **Important:** when you actually execute the command, the closing `EOF` must be at column 0; the leading whitespace shown below is markdown list indentation only and is not part of the bash you run.
    ```bash
    git commit -m "$(cat <<'EOF'
