@@ -855,3 +855,185 @@ def test_main_dispatches_check_merge_cmd(tmp_path, capsys):
         board.main(["check-merge-cmd", 'git merge feature/wip -m "msg"'])
     assert exc.value.code == 1
     assert "feature/wip" in capsys.readouterr().out
+
+
+def test_add_basic(tmp_path):
+    """add with title + notes + source produces the expected block."""
+    docs = tmp_path / "docs" / "superpowers"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Existing\n\nSome notes.\n")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("New Item", "Why deferred.", "abc1234")
+
+    text = backlog.read_text()
+    assert "## Existing" in text
+    assert "## New Item" in text
+    assert "Why deferred." in text
+    assert "Source: abc1234" in text
+
+
+def test_add_title_only(tmp_path):
+    """add with title only produces just the heading + trailing blank line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Bare Title", None, None)
+
+    text = backlog.read_text()
+    assert "## Bare Title" in text
+    assert "Source:" not in text
+
+
+def test_add_notes_no_source(tmp_path):
+    """add with notes but no source omits the Source: line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Some Task", "A note.", None)
+
+    text = backlog.read_text()
+    assert "## Some Task" in text
+    assert "A note." in text
+    assert "Source:" not in text
+
+
+def test_add_source_no_notes(tmp_path):
+    """add with source but no notes produces title + Source: line."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Some Task", None, "src/file.py:42")
+
+    text = backlog.read_text()
+    assert "## Some Task" in text
+    assert "Source: src/file.py:42" in text
+
+
+def test_add_duplicate_title_rejected(tmp_path, capsys):
+    """add rejects a title that already exists in the backlog."""
+    import pytest
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Existing\n\nA note.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("Existing", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "duplicate" in err.lower()
+    assert "Existing" in err
+
+
+def test_add_missing_backlog(tmp_path, capsys):
+    """add errors if backlog.md does not exist."""
+    import pytest
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    # Do NOT create the file.
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            board._cmd_add("Something", None, None)
+        assert exc_info.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "backlog.md" in err
+    assert "missing" in err.lower()
+
+
+def test_add_stages_files(tmp_path):
+    """add stages backlog.md and INDEX.md via _git_add."""
+    docs = tmp_path / "docs" / "superpowers"
+    index = docs / "INDEX.md"
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("")
+
+    with (
+        mock.patch.object(board, "DOCS_ROOT", docs),
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "INDEX_PATH", index),
+        mock.patch.object(board, "_git_add") as git_add,
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("New", "notes", "abc1234")
+
+    staged = git_add.call_args.args[0]
+    assert backlog in staged
+    assert index in staged
+
+
+def test_add_preserves_existing_entries(tmp_path):
+    """add appends to backlog without disturbing earlier entries."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("## Foo\n\nFoo notes.\n\n## Bar\n\nBar notes.\n")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Baz", "Baz notes.", "abc1234")
+
+    text = backlog.read_text()
+    assert text.index("## Foo") < text.index("## Bar") < text.index("## Baz")
+    assert "Foo notes." in text
+    assert "Bar notes." in text
+    assert "Baz notes." in text
+
+
+def test_add_trailing_newline_normalization(tmp_path):
+    """add leaves backlog ending with exactly one trailing newline."""
+    backlog = tmp_path / "docs" / "board" / "backlog.md"
+    backlog.parent.mkdir(parents=True)
+    # No trailing newline.
+    backlog.write_text("## Foo\n\nnotes")
+
+    with (
+        mock.patch.object(board, "BACKLOG_PATH", backlog),
+        mock.patch.object(board, "_git_add"),
+        mock.patch.object(board, "_regen_index"),
+    ):
+        board._cmd_add("Bar", "bar notes", "abc1234")
+
+    text = backlog.read_text()
+    # Exactly one trailing newline.
+    assert text.endswith("\n")
+    assert not text.endswith("\n\n\n")

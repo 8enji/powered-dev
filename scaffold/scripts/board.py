@@ -589,6 +589,57 @@ def _cmd_set_pr(pr: int, branch: str | None) -> None:
     print(f"Done. Run `git commit` to finalize.")
 
 
+def _cmd_add(title: str, notes: str | None, source: str | None) -> None:
+    """Append a new entry to backlog.md.
+
+    Validates that backlog.md exists and that the title is not already present.
+    Stages backlog.md and INDEX.md on success.
+    """
+    if not BACKLOG_PATH.exists():
+        print(
+            f"ERROR: backlog.md missing at {BACKLOG_PATH} — run /init-workflow first.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Dedupe against existing entries. Strip HTML comment blocks first to
+    # match the same logic used by lint_backlog (template comments at the top
+    # of the file must not produce false-positive matches).
+    text = BACKLOG_PATH.read_text(encoding="utf-8")
+    stripped = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    headings = re.findall(r"^##\s+(.+?)\s*$", stripped, flags=re.MULTILINE)
+    if title in headings:
+        print(
+            f"ERROR: duplicate backlog entry: '{title}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Build the appended block.
+    parts = [f"## {title}\n"]
+    if notes:
+        parts.append(f"\n{notes}\n")
+    if source:
+        parts.append(f"\nSource: {source}\n")
+    block = "".join(parts)
+
+    # Normalize the existing file ending, then append.
+    if text and not text.endswith("\n"):
+        text += "\n"
+    if text and not text.endswith("\n\n"):
+        text += "\n"
+    new_text = text + block
+    # Collapse any accidental run of 3+ newlines to exactly 2.
+    new_text = re.sub(r"\n{3,}", "\n\n", new_text)
+    # Ensure exactly one trailing newline.
+    new_text = new_text.rstrip("\n") + "\n"
+    BACKLOG_PATH.write_text(new_text, encoding="utf-8")
+
+    _regen_index()
+    _git_add([BACKLOG_PATH, INDEX_PATH])
+    print(f"Added '{title}' to backlog.")
+
+
 def _cmd_start(title: str, tier: str) -> None:
     """Start a task: scaffold plan stub (+ spec stub for full tier),
     remove from backlog if the title matches an entry, regenerate index,
@@ -712,6 +763,19 @@ def main(argv: list[str] | None = None) -> None:
         help="Branch name whose done plan to update (default: current branch)",
     )
 
+    add_p = sub.add_parser("add", help="Append a new entry to backlog.md")
+    add_p.add_argument("title", help="Backlog entry title (## heading)")
+    add_p.add_argument(
+        "--notes",
+        default=None,
+        help="Free-form body text (optional)",
+    )
+    add_p.add_argument(
+        "--source",
+        default=None,
+        help="Source reference, e.g. commit SHA or file:line (optional)",
+    )
+
     check_merge_p = sub.add_parser("check-merge", help="Gate for git merge")
     check_merge_p.add_argument("branch", help="Branch name to check")
 
@@ -740,6 +804,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_abandon()
     elif args.command == "set-pr":
         _cmd_set_pr(args.pr, args.branch)
+    elif args.command == "add":
+        _cmd_add(args.title, args.notes, args.source)
     elif args.command == "check-merge":
         _cmd_check_merge(args.branch)
     elif args.command == "check-merge-cmd":
